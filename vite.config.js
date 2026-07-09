@@ -24,7 +24,10 @@ export default defineConfig(({ mode }) => {
       }
     },
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.GEMINI_API_KEY_A': JSON.stringify(env.GEMINI_API_KEY_A),
+      'process.env.GEMINI_API_KEY_B': JSON.stringify(env.GEMINI_API_KEY_B),
+      'process.env.GEMINI_API_KEY_C': JSON.stringify(env.GEMINI_API_KEY_C),
+      'process.env.GEMINI_API_KEY_D': JSON.stringify(env.GEMINI_API_KEY_D),
       'process.env.FIREBASE_API_KEY': JSON.stringify(env.FIREBASE_API_KEY),
       'process.env.FIREBASE_AUTH_DOMAIN': JSON.stringify(env.FIREBASE_AUTH_DOMAIN),
       'process.env.FIREBASE_PROJECT_ID': JSON.stringify(env.FIREBASE_PROJECT_ID),

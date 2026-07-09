@@ -92,6 +92,44 @@
       color: var(--accent-cyan);
       margin: 0.4rem 0;
     }
+    .profile-meta-value {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-family: var(--font-title);
+    }
+    /* ── Mobile overrides ── */
+    @media (max-width: 768px) {
+      .calculator-layout {
+        grid-template-columns: 1fr !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+      .profile-layout {
+        grid-template-columns: 1fr !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+      .profile-meta-item {
+        flex-direction: column;
+        gap: 0.3rem;
+      }
+      .profile-meta-value {
+        font-size: 0.92rem;
+      }
+      .macro-display {
+        grid-template-columns: 1fr 1fr;
+      }
+      .option-card-group {
+        flex-wrap: wrap;
+      }
+      .option-card {
+        flex: 1 1 45%;
+      }
+      .profile-stats-pill-container {
+        flex-wrap: wrap;
+        gap: 0.6rem;
+      }
+    }
     .macro-val span {
       font-size: 1rem;
       font-weight: 500;
@@ -118,7 +156,35 @@
     .macro-card.emerald .macro-bar {
       background: linear-gradient(90deg, var(--accent-emerald) 0%, #34d399 100%);
     }
-  </style>
+    /* ── Mobile overrides ── */
+    @media (max-width: 768px) {
+      .calculator-layout {
+        grid-template-columns: 1fr !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+      .macro-display {
+        grid-template-columns: 1fr 1fr;
+      }
+      .option-card-group {
+        flex-wrap: wrap;
+      }
+      .option-card {
+        flex: 1 1 45%;
+      }
+      .profile-stats-pill-container {
+        flex-wrap: wrap;
+        gap: 0.6rem;
+      }
+    }
+    @media (max-width: 480px) {
+      .macro-display {
+        grid-template-columns: 1fr;
+      }
+      .option-card {
+        flex: 1 1 100%;
+      }
+    }</style>
 </head>
 <body>
   <div class="app-container">

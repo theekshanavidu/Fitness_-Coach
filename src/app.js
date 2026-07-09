@@ -23,9 +23,16 @@ import { GoogleGenAI } from "@google/genai";
 import { Chart } from "chart.js/auto";
 
 // =========================================================================
-// GEMINI AI INIT — Robust Fallback Chain (@google/genai SDK)
+// GEMINI AI INIT — Robust Multi-Key & Model Fallback Chain
 // =========================================================================
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const KEYS = [
+  process.env.GEMINI_API_KEY_A,
+  process.env.GEMINI_API_KEY_B,
+  process.env.GEMINI_API_KEY_C,
+  process.env.GEMINI_API_KEY_D
+].filter(Boolean);
+
+let activeKeyIndex = 0;
 
 // Fallback model list as specified by the user
 const MODEL_CHAIN = [
@@ -36,28 +43,43 @@ const MODEL_CHAIN = [
   "gemini-1.5-flash"
 ];
 
-// Helper: Try each model in the chain sequentially on any error (quota limit, invalid model, etc.)
+// Helper: Try each model in the chain sequentially on the current key.
+// If all models fail, shift to the next key and start trying models from index 0.
 async function callWithFallback(apiFn) {
+  if (KEYS.length === 0) {
+    throw new Error("No Gemini API keys configured. Check your env settings.");
+  }
+
   let lastError = null;
-  for (const modelName of MODEL_CHAIN) {
-    try {
-      return await apiFn(modelName);
-    } catch (err) {
-      console.warn(`[AuraFit AI] Model ${modelName} call failed:`, err.message || err);
-      lastError = err;
-      // Continue to next model in the chain regardless of the error type
-      continue;
+
+  for (let k = 0; k < KEYS.length; k++) {
+    const keyIndex = (activeKeyIndex + k) % KEYS.length;
+    const currentKey = KEYS[keyIndex];
+    const client = new GoogleGenAI({ apiKey: currentKey });
+
+    console.log(`[AuraFit AI] Trying Key Index ${keyIndex} (${currentKey.substring(0, 8)}...)`);
+
+    for (const modelName of MODEL_CHAIN) {
+      try {
+        const result = await apiFn(client, modelName);
+        activeKeyIndex = keyIndex; // update active key on success
+        return result;
+      } catch (err) {
+        console.warn(`[AuraFit AI] Call failed for Key Index ${keyIndex} and Model ${modelName}:`, err.message || err);
+        lastError = err;
+      }
     }
+    console.warn(`[AuraFit AI] All models exhausted for Key Index ${keyIndex}. Rotating key...`);
   }
   throw lastError;
 }
 
 // Generate a single response (non-streaming) with fallback
 async function aiGenerate(prompt, systemInstruction) {
-  return await callWithFallback(async (modelName) => {
+  return await callWithFallback(async (client, modelName) => {
     const config = {};
     if (systemInstruction) config.systemInstruction = systemInstruction;
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
       model: modelName,
       contents: prompt,
       config,
@@ -68,12 +90,13 @@ async function aiGenerate(prompt, systemInstruction) {
 
 // Create a stateful multi-turn chat (returns the chat session)
 async function aiChat(systemInstruction) {
-  return await callWithFallback(async (modelName) => {
+  return await callWithFallback(async (client, modelName) => {
     const config = {};
     if (systemInstruction) config.systemInstruction = systemInstruction;
-    const session = ai.chats.create({ model: modelName, config });
-    // Attach selected model name to session metadata for mid-chat fallbacks
+    const session = client.chats.create({ model: modelName, config });
+    // Attach details to session for mid-chat recovery
     session.modelName = modelName;
+    session.clientInstance = client;
     return session;
   });
 }
@@ -710,55 +733,66 @@ if (chatInputForm) {
     } catch (err) {
       console.error("Chat error:", err);
       
-      const isQuota = err.status === 429 || 
-                      (err.message && err.message.toLowerCase().includes("quota")) || 
-                      (err.message && err.message.toLowerCase().includes("exhausted"));
-      if (isQuota) {
-        let success = false;
-        const currentModel = currentChatSession.modelName || "gemini-3.5-flash";
-        const currentIndex = MODEL_CHAIN.indexOf(currentModel);
-        
-        // Loop through the next models in the fallback chain
-        for (let i = currentIndex + 1; i < MODEL_CHAIN.length; i++) {
-          const nextModel = MODEL_CHAIN[i];
-          try {
-            console.warn(`Resuming chat session using fallback model: ${nextModel}...`);
-            const history = await currentChatSession.getHistory();
-            
-            // Re-create the session with the new model
-            const isSi = userProfile?.language === "sinhala";
-            const statsStr = `Age:${userProfile.age}, Height:${currentHeight || "--"}cm, Weight:${currentWeight || "--"}kg`;
-            const sysInstr = `You are a professional fitness coach & health advisor.
+      let success = false;
+      let history = [];
+      try {
+        history = await currentChatSession.getHistory();
+      } catch (hErr) {
+        console.warn("Failed to get chat history, proceeding with empty history:", hErr);
+      }
+
+      const isSi = userProfile?.language === "sinhala";
+      const statsStr = `Age:${userProfile?.age || "--"}, Height:${currentHeight || "--"}cm, Weight:${currentWeight || "--"}kg`;
+      const sysInstr = `You are a professional fitness coach & health advisor.
 User stats: ${statsStr}.
 Tailor every response around their metrics.
 Respond EXCLUSIVELY in ${isSi ? "Sinhala (සිංහල)" : "English"}. Never mix languages.
 Be concise, encouraging, and use clean Markdown.`;
+      const config = { systemInstruction: sysInstr };
 
-            const config = { systemInstruction: sysInstr };
-            const newSession = ai.chats.create({
+      // Try remaining models on the current working key, then rotate key and try from first model
+      for (let k = 0; k < KEYS.length; k++) {
+        const keyIndex = (activeKeyIndex + k) % KEYS.length;
+        const currentKey = KEYS[keyIndex];
+        const client = new GoogleGenAI({ apiKey: currentKey });
+
+        // If it's the current key, start from the next model. Otherwise, start from model index 0
+        const startModelIndex = (keyIndex === activeKeyIndex)
+          ? MODEL_CHAIN.indexOf(currentChatSession.modelName || "gemini-3.5-flash") + 1
+          : 0;
+
+        for (let i = startModelIndex; i < MODEL_CHAIN.length; i++) {
+          const nextModel = MODEL_CHAIN[i];
+          try {
+            console.warn(`[AuraFit AI Chat Fallback] Trying Key Index ${keyIndex} with Model ${nextModel}...`);
+            const newSession = client.chats.create({
               model: nextModel,
               history: history,
               config
             });
             newSession.modelName = nextModel;
+            newSession.clientInstance = client;
 
             const res2 = await newSession.sendMessage({ message: userMsg });
             currentChatSession = newSession;
+            activeKeyIndex = keyIndex; // update working key index
+
             typingEl.style.display = "none";
             chatEl.innerHTML += `<div class="chat-bubble ai chat-bubble-markdown">${formatMarkdown(res2.text)}</div>`;
             success = true;
             break;
           } catch (fallbackErr) {
-            console.error(`Fallback to model ${nextModel} failed:`, fallbackErr);
+            console.error(`[AuraFit AI Chat Fallback] Failed for Key Index ${keyIndex} and Model ${nextModel}:`, fallbackErr);
           }
         }
-        
-        if (success) {
-          chatEl.scrollTop = chatEl.scrollHeight;
-          return;
-        }
+        if (success) break;
       }
-      
+
+      if (success) {
+        chatEl.scrollTop = chatEl.scrollHeight;
+        return;
+      }
+
       typingEl.style.display = "none";
       chatEl.innerHTML += `<div class="chat-bubble ai" style="color:var(--accent-rose);">⚠️ ${userProfile?.language==="sinhala"?"ප්‍රතිචාරය ලබා ගැනීමේ දෝෂයක් ඇතිවිය. නැවත උත්සාහ කරන්න.":"Response failed. Please try again."}</div>`;
     }
