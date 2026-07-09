@@ -127,6 +127,7 @@
       <div class="logo-container">
         <img src="images (1).jpg" alt="AuraFit Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
         <div class="logo-text">AuraFit</div>
+        <button id="btn-sidebar-close" class="mobile-close-btn" title="Close Menu">&times;</button>
       </div>
       <nav style="flex: 1;">
         <ul class="nav-links">
@@ -161,9 +162,13 @@
       </div>
     </aside>
 
+    <!-- Sidebar Overlay for Mobile -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
     <!-- Main Content Frame -->
     <main class="main-content">
       <header class="top-bar">
+        <button id="btn-sidebar-toggle" class="mobile-toggle-btn" title="Open Menu">☰</button>
         <div class="page-title">🥗 Calorie & Protein Calculator</div>
         <div class="top-bar-right">
           <button id="btn-lang-toggle" class="lang-toggle-btn" title="Toggle Language / භාෂාව මාරු කරන්න">🌐 EN</button>

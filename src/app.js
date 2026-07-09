@@ -233,6 +233,38 @@ function initLangToggle() {
 }
 
 // =========================================================================
+// MOBILE DRAWER SIDEBAR HANDLERS
+// =========================================================================
+function initMobileSidebar() {
+  const toggleBtn = document.getElementById("btn-sidebar-toggle");
+  const closeBtn  = document.getElementById("btn-sidebar-close");
+  const overlay   = document.getElementById("sidebar-overlay");
+  const sidebar   = document.querySelector(".sidebar");
+
+  if (!sidebar) return;
+
+  function openSidebar() {
+    sidebar.classList.add("active");
+    if (overlay) overlay.classList.add("active");
+  }
+
+  function closeSidebar() {
+    sidebar.classList.remove("active");
+    if (overlay) overlay.classList.remove("active");
+  }
+
+  if (toggleBtn) toggleBtn.addEventListener("click", openSidebar);
+  if (closeBtn)  closeBtn.addEventListener("click", closeSidebar);
+  if (overlay)   overlay.addEventListener("click", closeSidebar);
+
+  // Close sidebar when clicking any navigation link
+  const navLinks = sidebar.querySelectorAll(".nav-link");
+  navLinks.forEach(link => {
+    link.addEventListener("click", closeSidebar);
+  });
+}
+
+// =========================================================================
 // AUTH STATE + ROUTING
 // =========================================================================
 onAuthStateChanged(auth, async (user) => {
@@ -261,6 +293,7 @@ onAuthStateChanged(auth, async (user) => {
       userProfile.age = calculateAge(userProfile.dob);
       updateUIWithProfile();
       initLangToggle();
+      initMobileSidebar();
     }
 
     if (isAuth) {
