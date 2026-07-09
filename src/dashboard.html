@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraFit - Dashboard</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="icon" type="image/jpeg" href="images (1).jpg">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-container">
+        <img src="images (1).jpg" alt="AuraFit Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
+        <div class="logo-text">AuraFit</div>
+      </div>
+      <nav style="flex: 1;">
+        <ul class="nav-links">
+          <li>
+            <a href="dashboard.html" class="nav-link active">
+              <span class="nav-icon">📊</span> Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="ai-chat.html" class="nav-link">
+              <span class="nav-icon">🤖</span> AI Chat & Plans
+            </a>
+          </li>
+          <li>
+            <a href="nutrition.html" class="nav-link">
+              <span class="nav-icon">🥗</span> Nutrition Calculator
+            </a>
+          </li>
+          <li>
+            <a href="profile.html" class="nav-link">
+              <span class="nav-icon">👤</span> Profile
+            </a>
+          </li>
+        </ul>
+      </nav>
+      <div class="user-profile-section">
+        <div id="sidebar-user-name" class="user-profile-name">Loading...</div>
+        <div id="sidebar-user-age" class="user-profile-age">Age: --</div>
+        <a href="#" id="btn-logout" class="nav-link" style="margin-top: 1rem; color: var(--accent-rose); background: rgba(244, 63, 94, 0.05);">
+          <span class="nav-icon">🔑</span> Logout
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content Frame -->
+    <main class="main-content">
+      <header class="top-bar">
+        <div class="page-title">📊 Health Dashboard</div>
+        <div class="top-bar-right">
+          <button id="btn-lang-toggle" class="lang-toggle-btn" title="Toggle Language / භාෂාව මාරු කරන්න">🌐 EN</button>
+          <div style="font-size: 0.9rem; color: var(--text-secondary);" id="dashboard-user-greeting">
+            Welcome, <strong id="greeting-name">--</strong>!
+          </div>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- Stats Summary Grid -->
+        <section class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Current Weight</span>
+            <div id="stat-weight" class="stat-value">-- <span>kg</span></div>
+            <div class="stat-trend neutral">Daily Metric</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Waist Circumference</span>
+            <div id="stat-waist" class="stat-value">-- <span>in</span></div>
+            <div class="stat-trend neutral">Daily Metric</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Chest Circumference</span>
+            <div id="stat-chest" class="stat-value">-- <span>in</span></div>
+            <div class="stat-trend neutral">Daily Metric</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Current Height</span>
+            <div id="stat-height" class="stat-value">-- <span>cm</span></div>
+            <div class="stat-trend neutral">Monthly Metric</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Body Mass Index (BMI)</span>
+            <div id="stat-bmi" class="stat-value">--</div>
+            <div id="stat-bmi-status" class="stat-trend neutral">Not Calculated</div>
+          </div>
+        </section>
+
+        <!-- Main Body Grid: Chart & Form -->
+        <div class="dashboard-grid">
+          <!-- Progress Trends Chart -->
+          <article class="glass-panel" style="min-height: 450px;">
+            <div class="panel-header">
+              <h2 class="panel-title">📈 Body Metrics Progress</h2>
+            </div>
+            <div class="chart-container">
+              <canvas id="progressChart"></canvas>
+            </div>
+          </article>
+
+          <!-- Input Logs forms -->
+          <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Daily Logs -->
+            <article class="glass-panel">
+              <div class="panel-header">
+                <h2 class="panel-title">📝 Log Daily Metrics</h2>
+              </div>
+              <form id="form-daily" class="log-form" onsubmit="event.preventDefault();">
+                <div class="form-group">
+                  <label class="input-label" for="daily-date">Log Date</label>
+                  <input type="date" id="daily-date" class="input-field" required>
+                </div>
+                <div class="form-group">
+                  <label class="input-label" for="daily-weight">Weight (kg)</label>
+                  <input type="number" step="0.1" id="daily-weight" class="input-field" placeholder="e.g. 72.5" required>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="input-label" for="daily-waist">Waist (inches)</label>
+                    <input type="number" step="0.1" id="daily-waist" class="input-field" placeholder="e.g. 32.0" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="input-label" for="daily-chest">Chest (inches)</label>
+                    <input type="number" step="0.1" id="daily-chest" class="input-field" placeholder="e.g. 38.5" required>
+                  </div>
+                </div>
+                <button type="submit" id="btn-daily-submit" class="submit-btn">Save Daily Log</button>
+              </form>
+            </article>
+
+            <!-- Monthly Logs -->
+            <article class="glass-panel">
+              <div class="panel-header">
+                <h2 class="panel-title">📅 Log Monthly Height</h2>
+              </div>
+              <form id="form-monthly" class="log-form" onsubmit="event.preventDefault();">
+                <div class="form-group">
+                  <label class="input-label" for="monthly-month">Log Month</label>
+                  <input type="month" id="monthly-month" class="input-field" required>
+                </div>
+                <div class="form-group">
+                  <label class="input-label" for="monthly-height">Height (cm)</label>
+                  <input type="number" step="0.1" id="monthly-height" class="input-field" placeholder="e.g. 175.0" required>
+                </div>
+                <button type="submit" id="btn-monthly-submit" class="submit-btn alt">Save Height</button>
+              </form>
+            </article>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraFit - AI Coach</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="icon" type="image/jpeg" href="images (1).jpg">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-container">
+        <img src="images (1).jpg" alt="AuraFit Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
+        <div class="logo-text">AuraFit</div>
+      </div>
+      <nav style="flex: 1;">
+        <ul class="nav-links">
+          <li>
+            <a href="dashboard.html" class="nav-link">
+              <span class="nav-icon">📊</span> Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="ai-chat.html" class="nav-link active">
+              <span class="nav-icon">🤖</span> AI Chat & Plans
+            </a>
+          </li>
+          <li>
+            <a href="nutrition.html" class="nav-link">
+              <span class="nav-icon">🥗</span> Nutrition Calculator
+            </a>
+          </li>
+          <li>
+            <a href="profile.html" class="nav-link">
+              <span class="nav-icon">👤</span> Profile
+            </a>
+          </li>
+        </ul>
+      </nav>
+      <div class="user-profile-section">
+        <div id="sidebar-user-name" class="user-profile-name">Loading...</div>
+        <div id="sidebar-user-age" class="user-profile-age">Age: --</div>
+        <a href="#" id="btn-logout" class="nav-link" style="margin-top: 1rem; color: var(--accent-rose); background: rgba(244, 63, 94, 0.05);">
+          <span class="nav-icon">🔑</span> Logout
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content Frame -->
+    <main class="main-content">
+      <header class="top-bar">
+        <div class="page-title">🤖 AI Advisor & Fitness Coach</div>
+        <div class="top-bar-right">
+          <button id="btn-lang-toggle" class="lang-toggle-btn" title="Toggle Language / භාෂාව මාරු කරන්න">🌐 EN</button>
+          <div style="font-size: 0.9rem; color: var(--text-secondary);" id="ai-user-greeting">
+            User: <strong id="greeting-name-ai">--</strong>
+          </div>
+        </div>
+      </header>
+
+      <!-- AI Layout -->
+      <div class="content-body" style="padding: 1.5rem; overflow: hidden;">
+        <div class="ai-layout">
+          <!-- Chat Panel (Left) -->
+          <section class="chat-container-panel">
+            <div class="panel-header" style="background: rgba(255,255,255,0.01); padding: 1rem 1.5rem; margin-bottom: 0;">
+              <h2 class="panel-title">💬 Chat with AI Fitness Coach</h2>
+            </div>
+            
+            <div id="chat-messages" class="chat-messages">
+              <!-- Default welcome bubble -->
+              <div class="chat-bubble ai">
+                Hello! I am your AuraFit AI health and fitness coach. I can help you design a customized **Meal Plan**, outline a **Workout Plan**, or review any existing plans you have. I speak both English and Sinhala! How can I help you today?
+              </div>
+            </div>
+
+            <!-- Typing indicator -->
+            <div id="typing-indicator" class="typing-indicator" style="display: none; margin: 0 1.5rem 1rem;">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+
+            <form id="chat-input-form" class="chat-input-bar" onsubmit="event.preventDefault();">
+              <input type="text" id="chat-user-message" class="chat-text-input" placeholder="Ask AI anything... / AI එකෙන් ඕනෑම දෙයක් අසන්න..." required autocomplete="off">
+              <button type="submit" id="btn-chat-send" class="chat-send-btn">🚀</button>
+            </form>
+          </section>
+
+          <!-- Plan Tuner & Suggestions (Right) -->
+          <section class="ai-side-container">
+            <!-- Dynamic Suggestions Board -->
+            <article class="glass-panel">
+              <div class="panel-header">
+                <h2 class="panel-title">💡 AI Suggestions</h2>
+              </div>
+              <div id="suggestions-board" class="suggestions-list">
+                <div class="suggestion-item">
+                  <div class="suggestion-icon">⚡</div>
+                  <div class="suggestion-content">
+                    <div class="suggestion-title">Analyzing data...</div>
+                    <div class="suggestion-desc">Checking your latest logged metrics...</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <!-- Plan Adjuster Form -->
+            <article class="glass-panel">
+              <div class="panel-header">
+                <h2 class="panel-title">⚙️ Plan Review & Tuning</h2>
+              </div>
+              <div class="tab-bar">
+                <button type="button" id="tab-meal" class="tab-btn active" onclick="switchPlanTab('meal')">Meal Plan</button>
+                <button type="button" id="tab-workout" class="tab-btn" onclick="switchPlanTab('workout')">Workout Plan</button>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="input-label" id="plan-input-label" for="plan-text-input">Paste your current Meal Plan below:</label>
+                <textarea id="plan-text-input" class="tune-text-area" placeholder="e.g. Morning: 1 cup rice, lunch: 2 boiled eggs..."></textarea>
+              </div>
+
+              <button type="button" id="btn-review-plan" class="submit-btn" style="width: 100%; margin-bottom: 1rem;">
+                🔍 Review Plan
+              </button>
+
+              <div class="input-label" style="margin-bottom: 0.4rem;">AI Recommendations & Modifications:</div>
+              <div id="plan-review-results" class="tune-results-box">
+                Your review results will appear here once you press "Review Plan".
+              </div>
+            </article>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+  <script>
+    // Tab switching for Plan Tuner
+    let activePlanTab = 'meal';
+    function switchPlanTab(tab) {
+      const mealBtn = document.getElementById('tab-meal');
+      const workoutBtn = document.getElementById('tab-workout');
+      const label = document.getElementById('plan-input-label');
+      const textarea = document.getElementById('plan-text-input');
+
+      activePlanTab = tab;
+
+      if (tab === 'meal') {
+        mealBtn.classList.add('active');
+        workoutBtn.classList.remove('active');
+        label.innerText = 'Paste your current Meal Plan below:';
+        textarea.placeholder = 'e.g. Morning: 1 cup rice, lunch: 2 boiled eggs, evening: tea and oats...';
+      } else {
+        mealBtn.classList.remove('active');
+        workoutBtn.classList.add('active');
+        label.innerText = 'Paste your current Workout Plan below:';
+        textarea.placeholder = 'e.g. 3 days gym split, weight lifting, 20 mins cardio daily...';
+      }
+    }
+    // Bind global reference
+    window.switchPlanTab = switchPlanTab;
+    window.getActivePlanTab = () => activePlanTab;
+  </script>
+</body>
+</html>

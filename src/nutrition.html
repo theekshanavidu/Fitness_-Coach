@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraFit - Nutrition Calculator</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="icon" type="image/jpeg" href="images (1).jpg">
+  <style>
+    /* Custom calculator styling */
+    .calculator-layout {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    .profile-stats-pill-container {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .stat-pill {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 30px;
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .stat-pill strong {
+      color: var(--accent-cyan);
+    }
+    .selection-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+    .option-card-group {
+      display: flex;
+      gap: 0.8rem;
+    }
+    .option-card {
+      flex: 1;
+      background: rgba(7, 9, 14, 0.4);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition-normal);
+      user-select: none;
+    }
+    .option-card:hover {
+      border-color: rgba(6, 182, 212, 0.2);
+      transform: translateY(-2px);
+    }
+    .option-card.active {
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(139, 92, 246, 0.05) 100%);
+      border-color: var(--accent-cyan);
+      box-shadow: var(--shadow-neon-cyan);
+    }
+    .option-card-title {
+      font-family: var(--font-title);
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 0.2rem;
+      color: var(--text-primary);
+    }
+    .option-card-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .macro-display {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.2rem;
+      margin-bottom: 1.5rem;
+    }
+    .macro-card {
+      background: linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.02) 100%);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 1.2rem;
+      text-align: center;
+    }
+    .macro-val {
+      font-family: var(--font-title);
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: var(--accent-cyan);
+      margin: 0.4rem 0;
+    }
+    .macro-val span {
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .macro-card.emerald .macro-val {
+      color: var(--accent-emerald);
+    }
+    .macro-bar-container {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-tertiary);
+      border-radius: 10px;
+      margin-top: 0.8rem;
+      overflow: hidden;
+    }
+    .macro-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-cyan) 0%, var(--accent-violet) 100%);
+      border-radius: 10px;
+      width: 0%;
+      transition: width 0.8s ease-in-out;
+    }
+    .macro-card.emerald .macro-bar {
+      background: linear-gradient(90deg, var(--accent-emerald) 0%, #34d399 100%);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-container">
+        <img src="images (1).jpg" alt="AuraFit Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
+        <div class="logo-text">AuraFit</div>
+      </div>
+      <nav style="flex: 1;">
+        <ul class="nav-links">
+          <li>
+            <a href="dashboard.html" class="nav-link">
+              <span class="nav-icon">📊</span> Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="ai-chat.html" class="nav-link">
+              <span class="nav-icon">🤖</span> AI Chat & Plans
+            </a>
+          </li>
+          <li>
+            <a href="nutrition.html" class="nav-link active">
+              <span class="nav-icon">🥗</span> Nutrition Calculator
+            </a>
+          </li>
+          <li>
+            <a href="profile.html" class="nav-link">
+              <span class="nav-icon">👤</span> Profile
+            </a>
+          </li>
+        </ul>
+      </nav>
+      <div class="user-profile-section">
+        <div id="sidebar-user-name" class="user-profile-name">Loading...</div>
+        <div id="sidebar-user-age" class="user-profile-age">Age: --</div>
+        <a href="#" id="btn-logout" class="nav-link" style="margin-top: 1rem; color: var(--accent-rose); background: rgba(244, 63, 94, 0.05);">
+          <span class="nav-icon">🔑</span> Logout
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content Frame -->
+    <main class="main-content">
+      <header class="top-bar">
+        <div class="page-title">🥗 Calorie & Protein Calculator</div>
+        <div class="top-bar-right">
+          <button id="btn-lang-toggle" class="lang-toggle-btn" title="Toggle Language / භාෂාව මාරු කරන්න">🌐 EN</button>
+          <div style="font-size: 0.9rem; color: var(--text-secondary);" id="nutrition-user-greeting">
+            Welcome, <strong id="greeting-name-nutrition">--</strong>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- Error panel if metrics missing -->
+        <div id="calculator-warning" class="glass-panel" style="display: none; border-color: rgba(244, 63, 94, 0.3);">
+          <div style="color: var(--accent-rose); font-weight: 600; margin-bottom: 0.5rem; font-size: 1.1rem;">⚠️ Missing Body Metrics</div>
+          <p style="color: var(--text-secondary); font-size: 0.9rem;">To run the Calorie & Protein calculator, please log your current height and weight on the <a href="dashboard.html" style="color: var(--accent-cyan); text-decoration: underline;">Dashboard</a> first.</p>
+        </div>
+
+        <div id="calculator-container" class="calculator-layout">
+          <!-- Parameter Options (Left) -->
+          <div class="selection-grid">
+            <article class="glass-panel">
+              <h2 class="panel-title" style="margin-bottom: 0.5rem;">📋 My Metrics Profile</h2>
+              <div class="profile-stats-pill-container">
+                <div class="stat-pill">Weight: <strong id="calc-pill-weight">--</strong> kg</div>
+                <div class="stat-pill">Height: <strong id="calc-pill-height">--</strong> cm</div>
+                <div class="stat-pill">Age: <strong id="calc-pill-age">--</strong> yrs</div>
+              </div>
+
+              <!-- Activity Level Selection -->
+              <div class="form-group" style="margin-bottom: 1.2rem;">
+                <label class="input-label" style="margin-bottom: 0.4rem;">Select Activity Level</label>
+                <div class="option-card-group" style="flex-wrap: wrap;">
+                  <div class="option-card active" style="flex: 1 1 45%; margin-bottom: 0.5rem;" id="activity-sedentary" onclick="selectActivity('sedentary', 1.2)">
+                    <div class="option-card-title">Sedentary</div>
+                    <div class="option-card-desc">Little to no exercise</div>
+                  </div>
+                  <div class="option-card" style="flex: 1 1 45%; margin-bottom: 0.5rem;" id="activity-light" onclick="selectActivity('light', 1.375)">
+                    <div class="option-card-title">Lightly Active</div>
+                    <div class="option-card-desc">1-3 days/week exercise</div>
+                  </div>
+                  <div class="option-card" style="flex: 1 1 45%;" id="activity-moderate" onclick="selectActivity('moderate', 1.55)">
+                    <div class="option-card-title">Moderate</div>
+                    <div class="option-card-desc">3-5 days/week exercise</div>
+                  </div>
+                  <div class="option-card" style="flex: 1 1 45%;" id="activity-active" onclick="selectActivity('active', 1.725)">
+                    <div class="option-card-title">Very Active</div>
+                    <div class="option-card-desc">6-7 days/week exercise</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Goal Selection -->
+              <div class="form-group">
+                <label class="input-label" style="margin-bottom: 0.4rem;">Select Fitness Goal</label>
+                <div class="option-card-group">
+                  <div class="option-card" id="goal-loss" onclick="selectGoal('loss')">
+                    <div class="option-card-title">Weight Loss</div>
+                    <div class="option-card-desc">Caloric deficit</div>
+                  </div>
+                  <div class="option-card active" id="goal-maintain" onclick="selectGoal('maintain')">
+                    <div class="option-card-title">Maintain</div>
+                    <div class="option-card-desc">Caloric balance</div>
+                  </div>
+                  <div class="option-card" id="goal-gain" onclick="selectGoal('gain')">
+                    <div class="option-card-title">Gain Muscle</div>
+                    <div class="option-card-desc">Caloric surplus</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <!-- Calculated Results & AI Nutrition Advice (Right) -->
+          <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Output Macro Card Displays -->
+            <div class="macro-display">
+              <div class="macro-card">
+                <span class="stat-label">Daily Calorie Target (TDEE)</span>
+                <div class="macro-val" id="val-tdee">-- <span>kcal</span></div>
+                <span class="stat-label" id="val-bmr-lbl" style="font-size: 0.75rem;">BMR: -- kcal</span>
+                <div class="macro-bar-container">
+                  <div class="macro-bar" id="bar-tdee" style="width: 75%;"></div>
+                </div>
+              </div>
+              <div class="macro-card emerald">
+                <span class="stat-label">Daily Protein Target</span>
+                <div class="macro-val" id="val-protein">-- <span>g</span></div>
+                <span class="stat-label" id="val-protein-lbl" style="font-size: 0.75rem;">Based on goal</span>
+                <div class="macro-bar-container">
+                  <div class="macro-bar" id="bar-protein" style="width: 60%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gemini AI Nutrition Advice Panel -->
+            <article class="glass-panel" style="flex: 1; display: flex; flex-direction: column;">
+              <div class="panel-header">
+                <h2 class="panel-title">🤖 AI Nutrition Insights</h2>
+              </div>
+              <div id="ai-nutrition-advice" class="tune-results-box" style="max-height: none; height: 100%; min-height: 200px;">
+                Loading personalized meal distribution and macros advice from Gemini...
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+  <script>
+    // Selections variables
+    let selectedActivityFactor = 1.2;
+    let selectedActivityName = 'sedentary';
+    let selectedGoal = 'maintain';
+
+    function selectActivity(activity, factor) {
+      const activities = ['sedentary', 'light', 'moderate', 'active'];
+      activities.forEach(act => {
+        document.getElementById(`activity-${act}`).classList.toggle('active', act === activity);
+      });
+      selectedActivityFactor = factor;
+      selectedActivityName = activity;
+      triggerRecalculate();
+    }
+
+    function selectGoal(goal) {
+      const goals = ['loss', 'maintain', 'gain'];
+      goals.forEach(g => {
+        document.getElementById(`goal-${g}`).classList.toggle('active', g === goal);
+      });
+      selectedGoal = goal;
+      triggerRecalculate();
+    }
+
+    function triggerRecalculate() {
+      if (window.calculateNutrition) {
+        // Gender is resolved in app.js from profile context, app.js calculation reads it
+        window.calculateNutrition(null, selectedActivityFactor, selectedGoal);
+      }
+    }
+
+    // Expose selections globally
+    window.selectActivity = selectActivity;
+    window.selectGoal = selectGoal;
+    window.getSelectedActivityFactor = () => selectedActivityFactor;
+    window.getSelectedActivityName = () => selectedActivityName;
+    window.getSelectedGoal = () => selectedGoal;
+  </script>
+</body>
+</html>

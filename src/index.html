@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraFit - Login / Register</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="icon" type="image/jpeg" href="images (1).jpg">
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="auth-header">
+      <div style="display: flex; justify-content: center; margin-bottom: 0.8rem;">
+        <img src="images (1).jpg" alt="AuraFit Logo" style="width: 60px; height: 60px; border-radius: 12px; object-fit: cover; box-shadow: var(--shadow-neon-cyan);">
+      </div>
+      <h1>AuraFit</h1>
+      <p>AI-Powered Fitness & Wellness Companion</p>
+    </div>
+
+    <div class="auth-tabs">
+      <div id="tab-login" class="auth-tab active" onclick="switchTab('login')">Login</div>
+      <div id="tab-register" class="auth-tab" onclick="switchTab('register')">Register</div>
+    </div>
+
+    <!-- Login Form -->
+    <div id="login-container">
+      <form id="form-login" class="auth-form" onsubmit="event.preventDefault();">
+        <div class="auth-form-group">
+          <label class="auth-label" for="login-email">Email Address</label>
+          <input type="email" id="login-email" class="auth-input" placeholder="example@mail.com" required>
+        </div>
+        <div class="auth-form-group" style="margin-bottom: 0.5rem;">
+          <label class="auth-label" for="login-password">Password</label>
+          <input type="password" id="login-password" class="auth-input" placeholder="••••••••" required>
+        </div>
+        <div class="auth-form-group" style="text-align: right; margin-bottom: 1.5rem;">
+          <span id="btn-forgot" style="font-size: 0.8rem; color: var(--accent-cyan); cursor: pointer; font-weight: 500; transition: var(--transition-fast);" onmouseover="this.style.filter='brightness(1.2)'" onmouseout="this.style.filter='none'">Forgot Password?</span>
+        </div>
+        <button type="submit" id="btn-login-submit" class="auth-btn">Log In</button>
+      </form>
+    </div>
+
+    <!-- Register Form -->
+    <div id="register-container" style="display: none;">
+      <form id="form-register" class="auth-form" onsubmit="event.preventDefault();">
+        <div class="auth-form-group">
+          <label class="auth-label" for="register-name">Full Name</label>
+          <input type="text" id="register-name" class="auth-input" placeholder="John Doe" required>
+        </div>
+        <div class="auth-form-group">
+          <label class="auth-label" for="register-email">Email Address</label>
+          <input type="email" id="register-email" class="auth-input" placeholder="example@mail.com" required>
+        </div>
+        <div class="auth-form-group">
+          <label class="auth-label" for="register-password">Password</label>
+          <input type="password" id="register-password" class="auth-input" placeholder="••••••••" required>
+        </div>
+        <div class="auth-form-group">
+          <label class="auth-label" for="register-dob">Date of Birth</label>
+          <input type="date" id="register-dob" class="auth-input" required>
+          <div id="age-preview-container" class="auth-age-preview" style="display: none;">
+            Calculated Age: <span id="calculated-age">--</span> Years
+          </div>
+        </div>
+        <div class="auth-form-group row">
+          <div>
+            <label class="auth-label" for="register-gender">Gender</label>
+            <select id="register-gender" class="auth-input" style="background-color: rgba(7, 9, 14, 0.8);" required>
+              <option value="male" selected>Male</option>
+              <option value="female">Female</option>
+            </select>
+          </div>
+          <div>
+            <label class="auth-label" for="register-language">Language Preference</label>
+            <select id="register-language" class="auth-input" style="background-color: rgba(7, 9, 14, 0.8);" required>
+              <option value="english" selected>English</option>
+              <option value="sinhala">Sinhala (සිංහල)</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" id="btn-register-submit" class="auth-btn">Sign Up</button>
+      </form>
+    </div>
+
+    <!-- Social Sign In (Shared) -->
+    <div style="display: flex; align-items: center; margin: 1.5rem 0; color: var(--text-muted); font-size: 0.8rem;">
+      <hr style="flex: 1; border: 0; border-top: 1px solid var(--bg-tertiary);">
+      <span style="padding: 0 0.8rem;">OR</span>
+      <hr style="flex: 1; border: 0; border-top: 1px solid var(--bg-tertiary);">
+    </div>
+    <button type="button" id="btn-google-signin" class="auth-btn" style="margin-top: 0; background: rgba(255, 255, 255, 0.05); color: var(--text-primary); border: 1px solid var(--glass-border); box-shadow: none; display: flex; align-items: center; justify-content: center; gap: 0.8rem; transition: var(--transition-fast);">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="color: #ea4335;">
+        <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.579-7.859-8s3.529-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C17.955 2.192 15.34 1 12.24 1 6.033 1 12.24 1 12.24 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.986 0-.745-.078-1.31-.176-1.874H12.24z"/>
+      </svg>
+      Continue with Google
+    </button>
+  </div>
+
+  <script type="module" src="app.js"></script>
+  <script>
+    // Tab switching utility
+    function switchTab(tab) {
+      const loginTab = document.getElementById('tab-login');
+      const registerTab = document.getElementById('tab-register');
+      const loginForm = document.getElementById('login-container');
+      const registerForm = document.getElementById('register-container');
+
+      if (tab === 'login') {
+        loginTab.classList.add('active');
+        registerTab.classList.remove('active');
+        loginForm.style.display = 'block';
+        registerForm.style.display = 'none';
+      } else {
+        loginTab.classList.remove('active');
+        registerTab.classList.add('active');
+        loginForm.style.display = 'none';
+        registerForm.style.display = 'block';
+      }
+    }
+    // Bind functions globally for onclick references in type="module" scope
+    window.switchTab = switchTab;
+  </script>
+</body>
+</html>

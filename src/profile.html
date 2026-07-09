@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraFit - Profile</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="icon" type="image/jpeg" href="images (1).jpg">
+  <style>
+    .profile-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    .profile-meta-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+      margin-top: 1rem;
+    }
+    .profile-meta-item {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      padding-bottom: 0.8rem;
+    }
+    .profile-meta-label {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    .profile-meta-value {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-family: var(--font-title);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-container">
+        <img src="images (1).jpg" alt="AuraFit Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
+        <div class="logo-text">AuraFit</div>
+      </div>
+      <nav style="flex: 1;">
+        <ul class="nav-links">
+          <li>
+            <a href="dashboard.html" class="nav-link">
+              <span class="nav-icon">📊</span> Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="ai-chat.html" class="nav-link">
+              <span class="nav-icon">🤖</span> AI Chat & Plans
+            </a>
+          </li>
+          <li>
+            <a href="nutrition.html" class="nav-link">
+              <span class="nav-icon">🥗</span> Nutrition Calculator
+            </a>
+          </li>
+          <li>
+            <a href="profile.html" class="nav-link active">
+              <span class="nav-icon">👤</span> Profile
+            </a>
+          </li>
+        </ul>
+      </nav>
+      <div class="user-profile-section">
+        <div id="sidebar-user-name" class="user-profile-name">Loading...</div>
+        <div id="sidebar-user-age" class="user-profile-age">Age: --</div>
+        <a href="#" id="btn-logout" class="nav-link" style="margin-top: 1rem; color: var(--accent-rose); background: rgba(244, 63, 94, 0.05);">
+          <span class="nav-icon">🔑</span> Logout
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content Frame -->
+    <main class="main-content">
+      <header class="top-bar">
+        <div class="page-title">👤 User Profile Management</div>
+        <div class="top-bar-right">
+          <button id="btn-lang-toggle" class="lang-toggle-btn" title="Toggle Language / භාෂාව මාරු කරන්න">🌐 EN</button>
+          <div style="font-size: 0.9rem; color: var(--text-secondary);" id="profile-user-greeting">
+            Account Status: <strong style="color: var(--accent-emerald);">Active</strong>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <div class="profile-layout">
+          <!-- Profile View Details (Left) -->
+          <article class="glass-panel">
+            <div class="panel-header">
+              <h2 class="panel-title">📋 Account Details</h2>
+            </div>
+            <div class="profile-meta-list">
+              <div class="profile-meta-item">
+                <span class="profile-meta-label">Full Name</span>
+                <span class="profile-meta-value" id="profile-display-name">--</span>
+              </div>
+              <div class="profile-meta-item">
+                <span class="profile-meta-label">Email Address</span>
+                <span class="profile-meta-value" id="profile-display-email" style="font-family: inherit; font-weight: normal; color: var(--text-secondary);">--</span>
+              </div>
+              <div class="profile-meta-item">
+                <span class="profile-meta-label">Date of Birth</span>
+                <span class="profile-meta-value" id="profile-display-dob">--</span>
+              </div>
+              <div class="profile-meta-item">
+                <span class="profile-meta-label">Current Age (Auto Calculated)</span>
+                <span class="profile-meta-value" id="profile-display-age" style="color: var(--accent-cyan);">-- Years</span>
+              </div>
+              <div class="profile-meta-item">
+                <span class="profile-meta-label">Gender</span>
+                <span class="profile-meta-value" id="profile-display-gender" style="text-transform: capitalize;">--</span>
+              </div>
+              <div class="profile-meta-item">
+                <span class="profile-meta-label">Language Preference</span>
+                <span class="profile-meta-value" id="profile-display-language" style="text-transform: capitalize;">--</span>
+              </div>
+              <div class="profile-meta-item">
+                <span class="profile-meta-label">Member Since</span>
+                <span class="profile-meta-value" id="profile-display-joined">--</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Edit Profile Form (Right) -->
+          <article class="glass-panel">
+            <div class="panel-header">
+              <h2 class="panel-title">✏️ Update Profile Details</h2>
+            </div>
+            <form id="form-update-profile" class="log-form" onsubmit="event.preventDefault();">
+              <div class="form-group">
+                <label class="input-label" for="update-name">Full Name</label>
+                <input type="text" id="update-name" class="input-field" placeholder="e.g. John Doe" required>
+              </div>
+              <div class="form-group">
+                <label class="input-label" for="update-dob">Date of Birth</label>
+                <input type="date" id="update-dob" class="input-field" required>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                  <label class="input-label" for="update-gender">Gender</label>
+                  <select id="update-gender" class="input-field" style="background-color: rgba(7, 9, 14, 0.4);" required>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label class="input-label" for="update-language">Language Preference</label>
+                  <select id="update-language" class="input-field" style="background-color: rgba(7, 9, 14, 0.4);" required>
+                    <option value="english">English</option>
+                    <option value="sinhala">Sinhala (සිංහල)</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" id="btn-update-profile-submit" class="submit-btn">Save Profile Changes</button>
+            </form>
+          </article>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
