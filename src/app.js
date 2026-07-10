@@ -101,6 +101,52 @@ async function aiChat(systemInstruction) {
   });
 }
 
+// Helper to construct structured health context & logs instruction
+function getSystemInstruction(isSi, age, h, w, wa, ch, bmi, logs) {
+  let progressStr = "No historical log data available yet.";
+  if (logs && logs.length > 0) {
+    progressStr = logs.map(l => {
+      const d = l.timestamp?.seconds ? new Date(l.timestamp.seconds * 1000) : new Date(l.timestamp || l.id);
+      const dateStr = d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+      return `Date: ${dateStr}, Weight: ${l.weight}kg, Waist: ${l.waist}in, Chest: ${l.chest}in`;
+    }).join(" | ");
+
+    const firstLog = logs[0];
+    const lastLog = logs[logs.length - 1];
+    if (logs.length > 1) {
+      const weightDiff = (lastLog.weight - firstLog.weight).toFixed(1);
+      const waistDiff = (lastLog.waist - firstLog.waist).toFixed(1);
+      const chestDiff = (lastLog.chest - firstLog.chest).toFixed(1);
+      
+      progressStr += `\nOverall Changes (First log to Latest log): `;
+      progressStr += `Weight: ${weightDiff > 0 ? '+' : ''}${weightDiff}kg, `;
+      progressStr += `Waist: ${waistDiff > 0 ? '+' : ''}${waistDiff}in, `;
+      progressStr += `Chest: ${chestDiff > 0 ? '+' : ''}${chestDiff}in.`;
+    }
+  }
+
+  return `You are a professional fitness coach & health advisor.
+User Profile:
+- Name: ${userProfile?.name || "User"}
+- Gender: ${userProfile?.gender || "not specified"}
+- Age: ${age} Years
+- Height: ${h} cm
+- Latest Weight: ${w} kg
+- Latest Waist Size: ${wa} inches
+- Latest Chest Size: ${ch} inches
+- Latest BMI: ${bmi}
+
+User Historical Progress & Logs:
+${progressStr}
+
+Instructions:
+1. Review all of the user's profile details, latest metrics, and historical progress.
+2. When the user asks about their progress, weight loss, gains, waist reduction, or queries their history, refer directly to these stats and details.
+3. Encourage the user based on their actual trends (e.g. if they lost weight or reduced waist size, praise them; if they gained, offer constructive advice).
+4. Respond EXCLUSIVELY in ${isSi ? "Sinhala (සිංහල)" : "English"}. Never mix languages or respond in English if the language is Sinhala.
+5. Be professional, concise, encouraging, and use clean Markdown.`;
+}
+
 // =========================================================================
 // SESSION CACHE  (clears on tab close; persists across page navigations)
 // =========================================================================
@@ -135,6 +181,10 @@ let aiNutritionAdviceTimeout = null;
 let currentWeight  = null;
 let currentHeight  = null;
 let currentAge     = null;
+let currentWaist   = null;
+let currentChest   = null;
+let currentBmi     = null;
+let currentChatLogs = [];
 
 // =========================================================================
 // HELPERS
@@ -586,6 +636,7 @@ async function loadAiPageData() {
   try {
     const daily  = await fetchLatestDaily(currentUserId);
     const height = await fetchLatestHeight(currentUserId);
+    currentChatLogs = await fetchAllLogs(currentUserId);
 
     const w  = daily?.weight  ?? "--";
     const wa = daily?.waist   ?? "--";
@@ -594,7 +645,13 @@ async function loadAiPageData() {
     const age = userProfile?.age ?? "--";
     const bmi = (w !== "--" && h !== "--") ? (w / ((h/100)**2)).toFixed(1) : "--";
 
-    const statsStr = `Age:${age}, Height:${h}cm, Weight:${w}kg, Waist:${wa}in, Chest:${ch}in, BMI:${bmi}`;
+    // Set state variables for session tracking (e.g. mid-chat fallbacks)
+    currentWeight = w;
+    currentHeight = h;
+    currentAge    = age;
+    currentWaist  = wa;
+    currentChest  = ch;
+    currentBmi    = bmi;
 
     // Welcome bubble
     const chatEl = document.getElementById("chat-messages");
@@ -605,12 +662,8 @@ async function loadAiPageData() {
       chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
     }
 
-    // Build system instruction
-    const sysInstr = `You are a professional fitness coach & health advisor.
-User stats: ${statsStr}.
-Tailor every response around their metrics.
-Respond EXCLUSIVELY in ${isSi ? "Sinhala (සිංහල)" : "English"}. Never mix languages.
-Be concise, encouraging, and use clean Markdown.`;
+    // Build rich context system instruction
+    const sysInstr = getSystemInstruction(isSi, age, h, w, wa, ch, bmi, currentChatLogs);
 
     // Start a NEW chat session each time
     currentChatSession = await aiChat(sysInstr);
@@ -742,12 +795,7 @@ if (chatInputForm) {
       }
 
       const isSi = userProfile?.language === "sinhala";
-      const statsStr = `Age:${userProfile?.age || "--"}, Height:${currentHeight || "--"}cm, Weight:${currentWeight || "--"}kg`;
-      const sysInstr = `You are a professional fitness coach & health advisor.
-User stats: ${statsStr}.
-Tailor every response around their metrics.
-Respond EXCLUSIVELY in ${isSi ? "Sinhala (සිංහල)" : "English"}. Never mix languages.
-Be concise, encouraging, and use clean Markdown.`;
+      const sysInstr = getSystemInstruction(isSi, currentAge, currentHeight, currentWeight, currentWaist, currentChest, currentBmi, currentChatLogs);
       const config = { systemInstruction: sysInstr };
 
       // Try remaining models on the current working key, then rotate key and try from first model
