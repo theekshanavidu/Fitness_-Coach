@@ -9,7 +9,8 @@
     "web:dev": "vite",
     "web:build": "vite build",
     "web:preview": "vite preview",
-    "package": "node package-app.js"
+    "package": "node package-app.js",
+    "build:android": "vite build && node copy-assets.cjs"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",

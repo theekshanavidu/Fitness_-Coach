@@ -68,38 +68,53 @@
       <!-- AI Layout -->
       <div class="content-body" style="padding: 1.5rem;">
         <div class="ai-layout">
-          <!-- Chat Panel (Left) -->
-          <section class="chat-container-panel">
-            <div class="panel-header" style="background: rgba(255,255,255,0.01); padding: 1rem 1.5rem; margin-bottom: 0;">
-              <h2 class="panel-title">💬 Chat with AI Fitness Coach</h2>
-            </div>
-            
-            <div id="chat-messages" class="chat-messages">
-              <!-- Default welcome bubble -->
-              <div class="chat-bubble ai">
-                Hello! I am your AuraFit AI health and fitness coach. I can help you design a customized **Meal Plan**, outline a **Workout Plan**, or review any existing plans you have. I speak both English and Sinhala! How can I help you today?
+          <!-- Chat + Recent Chats Sidebar Wrapper -->
+          <div class="chat-with-sidebar">
+
+            <!-- Recent Chats Sidebar -->
+            <aside id="chats-sidebar" class="chats-sidebar">
+              <div class="chats-sidebar-header">
+                <span class="chats-sidebar-title">💬 Chats</span>
+                <button id="btn-new-chat" class="new-chat-btn" title="New Chat / අලුත් Chat එකක්">✏️ New</button>
               </div>
-            </div>
+              <ul id="recent-chats-list" class="recent-chats-list">
+                <li class="recent-chat-placeholder">Loading chats...</li>
+              </ul>
+            </aside>
 
-            <!-- Image preview container (thumbnails rendered by JS) -->
-            <div id="chat-image-preview-container" class="chat-image-preview-container" style="display: none;">
-              <!-- thumbnail cards injected here by app.js -->
-            </div>
+            <!-- Main Chat Panel -->
+            <section class="chat-container-panel">
+              <div class="panel-header" style="background: rgba(255,255,255,0.01); padding: 0.75rem 1.2rem; margin-bottom: 0; display: flex; align-items: center; gap: 0.75rem;">
+                <button id="btn-toggle-chats-sidebar" class="chats-sidebar-toggle-btn" title="Recent Chats / පරන Chat">☰</button>
+                <h2 class="panel-title" style="margin:0; flex:1;" id="chat-title-display">💬 New Chat</h2>
+              </div>
 
-            <!-- Typing indicator -->
-            <div id="typing-indicator" class="typing-indicator" style="display: none; margin: 0 1.5rem 1rem;">
-              <div class="typing-dot"></div>
-              <div class="typing-dot"></div>
-              <div class="typing-dot"></div>
-            </div>
+              <div id="chat-messages" class="chat-messages">
+                <!-- welcome bubble rendered by JS -->
+              </div>
 
-<form id="chat-input-form" class="chat-input-bar" onsubmit="event.preventDefault();">
-              <input type="file" id="chat-image-input" accept="image/*" multiple style="display: none;">
-              <button type="button" id="btn-chat-attach" class="chat-attach-btn" title="Attach Images / රූප එකතු කරන්න">📎</button>
-              <input type="text" id="chat-user-message" class="chat-text-input" placeholder="Ask AI anything… or paste an image (Ctrl+V) / රූපයක් paste කරන්න..." autocomplete="off">
-              <button type="submit" id="btn-chat-send" class="chat-send-btn">🚀</button>
-            </form>
-          </section>
+              <!-- Image preview container (thumbnails rendered by JS) -->
+              <div id="chat-image-preview-container" class="chat-image-preview-container" style="display: none;">
+                <!-- thumbnail cards injected here by app.js -->
+              </div>
+
+              <!-- Typing indicator -->
+              <div id="typing-indicator" class="typing-indicator" style="display: none; margin: 0 1.5rem 1rem;">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+              </div>
+
+              <form id="chat-input-form" class="chat-input-bar" onsubmit="event.preventDefault();">
+                <input type="file" id="chat-image-input" accept="image/*,application/pdf" multiple style="display: none;">
+                <button type="button" id="btn-chat-attach" class="chat-attach-btn" title="Attach Images / රූප එකතු කරන්න">📎</button>
+                <input type="text" id="chat-user-message" class="chat-text-input" placeholder="Ask AI anything… or paste an image (Ctrl+V)" autocomplete="off">
+                <button type="submit" id="btn-chat-send" class="chat-send-btn">🚀</button>
+              </form>
+            </section>
+
+          </div><!-- end .chat-with-sidebar -->
+
 
           <!-- Plan Tuner & Suggestions (Right) -->
           <section class="ai-side-container">

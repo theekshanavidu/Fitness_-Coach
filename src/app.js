@@ -19,7 +19,9 @@ import {
   orderBy,
   limit,
   addDoc,
-  serverTimestamp
+  serverTimestamp,
+  deleteDoc,
+  onSnapshot
 } from "firebase/firestore";
 import { GoogleGenAI } from "@google/genai";
 import { Chart } from "chart.js/auto";
@@ -179,6 +181,8 @@ function cacheClear() {
 let currentUserId  = null;
 let userProfile    = null;
 let currentChatSession = null;
+let currentChatId = null;
+let unsubscribeChats = null;
 let currentChart   = null;
 let aiNutritionAdviceTimeout = null;
 let currentWeight  = null;
@@ -667,6 +671,199 @@ async function renderProgressChart() {
 // =========================================================================
 // AI CHAT PAGE
 // =========================================================================
+// =========================================================================
+// AI CHAT PAGE (Multi-Session with Recent Chats Sidebar)
+// =========================================================================
+
+/** Starts a blank new chat session */
+async function createNewChat() {
+  currentChatId = null;
+  const chatEl = document.getElementById("chat-messages");
+  if (chatEl) {
+    const isSi = userProfile?.language === "sinhala";
+    const welcome = isSi
+      ? `ආයුබෝවන්! මම ඔබේ AuraFit AI සෞඛ්‍ය උපදේශකයායි.\nදත්ත ලැබුණා (වයස:${currentAge}, බර:${currentWeight}kg, උස:${currentHeight}cm, BMI:${currentBmi}).\nඔබට ගැළපෙන **Meal Plan** හෝ **Workout Plan** සකසා දිය හැකි. අද කුමක් අවශ්‍ය ද?`
+      : `Hello! I am your AuraFit AI coach.\nProfile received — Age:${currentAge}, Weight:${currentWeight}kg, Height:${currentHeight}cm, BMI:${currentBmi}.\nHow can I help you today?`;
+    chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  // Reset chat header title
+  const titleDisplay = document.getElementById("chat-title-display");
+  if (titleDisplay) {
+    titleDisplay.innerText = userProfile?.language === "sinhala" ? "💬 අලුත් Chat එකක්" : "💬 New Chat";
+  }
+
+  // Remove active class highlighting in the sidebar list
+  document.querySelectorAll(".recent-chat-item").forEach(item => item.classList.remove("active"));
+
+  // Build a clean, history-free Gemini chat session
+  const isSi = userProfile?.language === "sinhala";
+  const sysInstr = getSystemInstruction(isSi, currentAge, currentHeight, currentWeight, currentWaist, currentChest, currentBmi, currentChatLogs);
+  currentChatSession = await aiChat(sysInstr, []);
+}
+
+/** RESTORES/LOADS a past chat conversation from Firestore */
+async function loadChat(chatId) {
+  if (!currentUserId) return;
+  currentChatId = chatId;
+
+  // Add visual active highlight in sidebar list
+  document.querySelectorAll(".recent-chat-item").forEach(item => {
+    if (item.getAttribute("data-chat-id") === chatId) {
+      item.classList.add("active");
+    } else {
+      item.classList.remove("active");
+    }
+  });
+
+  const chatEl = document.getElementById("chat-messages");
+  if (chatEl) {
+    chatEl.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted); font-size:0.9rem;">${
+      userProfile?.language === "sinhala" ? "පෙර සංවාදය පූරණය වෙමින් පවතී…" : "Loading past conversation…"
+    }</div>`;
+  }
+
+  // Close mobile sidebar drawer once loaded
+  const sidebarEl = document.getElementById("chats-sidebar");
+  if (sidebarEl) sidebarEl.classList.remove("open");
+
+  // Get conversation title
+  try {
+    const chatDoc = await getDoc(doc(db, "users", currentUserId, "chats", chatId));
+    if (chatDoc.exists()) {
+      const titleDisplay = document.getElementById("chat-title-display");
+      if (titleDisplay) {
+        titleDisplay.innerText = chatDoc.data().title || "Chat";
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching chat title:", err);
+  }
+
+  // Fetch messages nested under users/{userId}/chats/{chatId}/messages
+  let dbHistory = [];
+  try {
+    const q = query(
+      collection(db, "users", currentUserId, "chats", chatId, "messages"),
+      orderBy("timestamp", "asc")
+    );
+    const snap = await getDocs(q);
+    snap.forEach(docSnap => {
+      dbHistory.push({ id: docSnap.id, ...docSnap.data() });
+    });
+  } catch (e) {
+    console.error("Error loading chat history from Firestore:", e);
+  }
+
+  if (chatEl) {
+    if (dbHistory.length === 0) {
+      const welcome = userProfile?.language === "sinhala"
+        ? `ආයුබෝවන්! මම ඔබේ AuraFit AI සෞඛ්‍ය උපදේශකයායි.\nදත්ත ලැබුණා (වයස:${currentAge}, බර:${currentWeight}kg, උස:${currentHeight}cm, BMI:${currentBmi}).\nඔබට ගැළපෙන **Meal Plan** හෝ **Workout Plan** සකසා දිය හැකි. අද කුමක් අවශ්‍ය ද?`
+        : `Hello! I am your AuraFit AI coach.\nProfile received — Age:${currentAge}, Weight:${currentWeight}kg, Height:${currentHeight}cm, BMI:${currentBmi}.\nHow can I help you today?`;
+      chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
+    } else {
+      chatEl.innerHTML = dbHistory.map(msg => {
+        const senderClass = msg.sender === "user" ? "user" : "ai";
+        const imgs = msg.images || (msg.image ? [msg.image] : []);
+        const imgMarkup = imgs.map(src => renderAttachmentMarkup(src)).join("");
+        const textMarkup = msg.text ? `<div>${msg.sender === "user" ? msg.text : formatMarkdown(msg.text)}</div>` : "";
+        return `<div class="chat-bubble ${senderClass}">${textMarkup}${imgMarkup}</div>`;
+      }).join("");
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+  }
+
+  // Setup Gemini chat history block
+  const isSi = userProfile?.language === "sinhala";
+  const sysInstr = getSystemInstruction(isSi, currentAge, currentHeight, currentWeight, currentWaist, currentChest, currentBmi, currentChatLogs);
+  
+  const geminiHistory = dbHistory.map(msg => {
+    const parts = [];
+    if (msg.text) parts.push({ text: msg.text });
+    const imgs = msg.images || (msg.image ? [msg.image] : []);
+    for (const src of imgs) {
+      const mimeType = src.match(/data:(.*?);base64/)?.[1] || "image/jpeg";
+      const data = src.split(",")[1] || src;
+      parts.push({ inlineData: { data, mimeType } });
+    }
+    return {
+      role: msg.sender === "user" ? "user" : "model",
+      parts: parts
+    };
+  });
+
+  currentChatSession = await aiChat(sysInstr, geminiHistory);
+}
+
+/** Subscribes to live updates of the last 20 chats */
+function bindRecentChatsListener() {
+  if (unsubscribeChats) unsubscribeChats();
+
+  const listEl = document.getElementById("recent-chats-list");
+  if (!listEl) return;
+
+  const q = query(
+    collection(db, "users", currentUserId, "chats"),
+    orderBy("updatedAt", "desc"),
+    limit(20)
+  );
+
+  unsubscribeChats = onSnapshot(q, (snapshot) => {
+    if (snapshot.empty) {
+      listEl.innerHTML = `<li class="recent-chat-placeholder">${
+        userProfile?.language === "sinhala" ? "පරණ chats කිසිවක් නැත" : "No recent chats"
+      }</li>`;
+      return;
+    }
+
+    listEl.innerHTML = snapshot.docs.map(docSnap => {
+      const data = docSnap.data();
+      const id = docSnap.id;
+      const title = data.title || (userProfile?.language === "sinhala" ? "අලුත් Chat එකක්" : "New Chat");
+      const activeClass = id === currentChatId ? "active" : "";
+      return `
+        <li class="recent-chat-item ${activeClass}" data-chat-id="${id}">
+          <span class="recent-chat-link">${title}</span>
+          <button class="recent-chat-delete-btn" data-chat-id="${id}" title="Delete Chat">🗑️</button>
+        </li>
+      `;
+    }).join("");
+
+    // Bind chat click
+    listEl.querySelectorAll(".recent-chat-item").forEach(item => {
+      item.addEventListener("click", (e) => {
+        if (e.target.classList.contains("recent-chat-delete-btn")) return;
+        const cid = item.getAttribute("data-chat-id");
+        loadChat(cid);
+      });
+    });
+
+    // Bind delete buttons
+    listEl.querySelectorAll(".recent-chat-delete-btn").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const cid = btn.getAttribute("data-chat-id");
+        const confirmMsg = userProfile?.language === "sinhala"
+          ? "මෙම chat එක ස්ථිරවම මකා දැමීමට අවශ්‍යද?"
+          : "Are you sure you want to delete this chat?";
+        if (confirm(confirmMsg)) {
+          try {
+            await deleteDoc(doc(db, "users", currentUserId, "chats", cid));
+            if (currentChatId === cid) {
+              createNewChat();
+            }
+          } catch (err) {
+            console.error("Error deleting chat document:", err);
+          }
+        }
+      });
+    });
+  }, (error) => {
+    console.error("Recent chats list sync error:", error);
+  });
+}
+
 async function loadAiPageData() {
   if (!currentUserId) return;
 
@@ -692,68 +889,36 @@ async function loadAiPageData() {
     currentChest  = ch;
     currentBmi    = bmi;
 
-    // Load message history from Firestore
-    let dbHistory = [];
-    try {
-      const q = query(
-        collection(db, "users", currentUserId, "chat_messages"),
-        orderBy("timestamp", "asc"),
-        limit(40)
-      );
-      const snap = await getDocs(q);
-      snap.forEach(docSnap => {
-        dbHistory.push({ id: docSnap.id, ...docSnap.data() });
+    // Bind Mobile sidebar toggle listener
+    const btnToggleChats = document.getElementById("btn-toggle-chats-sidebar");
+    const sidebarChats = document.getElementById("chats-sidebar");
+    if (btnToggleChats && sidebarChats) {
+      btnToggleChats.addEventListener("click", (e) => {
+        e.stopPropagation();
+        sidebarChats.classList.toggle("open");
       });
-    } catch (e) {
-      console.error("Error loading chat history from Firestore:", e);
+      document.addEventListener("click", (e) => {
+        if (sidebarChats.classList.contains("open") && !sidebarChats.contains(e.target) && e.target !== btnToggleChats) {
+          sidebarChats.classList.remove("open");
+        }
+      });
     }
 
-    // Populate chat window (either history or welcome bubble)
-    const chatEl = document.getElementById("chat-messages");
-    if (chatEl) {
-      if (dbHistory.length === 0) {
-        const welcome = isSi
-          ? `ආයුබෝවන්! මම ඔබේ AuraFit AI සෞඛ්‍ය උපදේශකයායි.\nදත්ත ලැබුණා (වයස:${age}, බර:${w}kg, උස:${h}cm, BMI:${bmi}).\nඔබට ගැළපෙන **Meal Plan** හෝ **Workout Plan** සකසා දිය හැකි. අද කුමක් අවශ්‍ය ද?`
-          : `Hello! I am your AuraFit AI coach.\nProfile received — Age:${age}, Weight:${w}kg, Height:${h}cm, BMI:${bmi}.\nHow can I help you today?`;
-        chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
-      } else {
-      chatEl.innerHTML = dbHistory.map(msg => {
-          const senderClass = msg.sender === "user" ? "user" : "ai";
-          // Support both new `images` array and legacy `image` string
-          const imgs = msg.images || (msg.image ? [msg.image] : []);
-          const imgMarkup = imgs.map(src => `<img src="${src}" alt="Attached Image">`).join("");
-          const textMarkup = msg.text ? `<div>${msg.sender === "user" ? msg.text : formatMarkdown(msg.text)}</div>` : "";
-          return `<div class="chat-bubble ${senderClass}">${textMarkup}${imgMarkup}</div>`;
-        }).join("");
-        chatEl.scrollTop = chatEl.scrollHeight;
-      }
+    // Bind New Chat button
+    const btnNewChat = document.getElementById("btn-new-chat");
+    if (btnNewChat) {
+      btnNewChat.addEventListener("click", () => {
+        createNewChat();
+      });
     }
 
-    // Build rich context system instruction
-    const sysInstr = getSystemInstruction(isSi, age, h, w, wa, ch, bmi, currentChatLogs);
+    // Load recent chats sidebar entries
+    bindRecentChatsListener();
 
-    // Map DB history to Gemini SDK format
-    const geminiHistory = dbHistory.map(msg => {
-      const parts = [];
-      if (msg.text) parts.push({ text: msg.text });
-      // Support both new `images` array and legacy `image` string
-      const imgs = msg.images || (msg.image ? [msg.image] : []);
-      for (const src of imgs) {
-        const mimeType = src.match(/data:(.*?);base64/)?.[1] || "image/jpeg";
-        const data = src.split(",")[1] || src;
-        parts.push({ inlineData: { data, mimeType } });
-      }
-      return {
-        role: msg.sender === "user" ? "user" : "model",
-        parts: parts
-      };
-    });
-
-    // Start a chat session with history
-    currentChatSession = await aiChat(sysInstr, geminiHistory);
+    // Start with a blank New Chat session by default
+    await createNewChat();
 
     // AI Suggestions Board
-    loadSuggestionsBoard(age, h, w, wa, ch, bmi, isSi);
   } catch (err) { console.error("AI page init error:", err); }
 }
 
@@ -843,12 +1008,28 @@ Output ONLY the 3 lines. No extra text.`;
   }
 }
 
-// Image attachment handling state — supports multiple images
-let attachedImages = []; // array of base64 strings
+// Attachment handling state — supports multiple images and PDFs
+let attachedImages = []; // array of base64 strings (both images and pdfs)
 
 const btnAttach = document.getElementById("btn-chat-attach");
 const fileInput = document.getElementById("chat-image-input");
 const previewContainer = document.getElementById("chat-image-preview-container");
+
+/** Renders attachment card UI for a base64 string */
+function renderAttachmentMarkup(src) {
+  if (src.startsWith("data:application/pdf")) {
+    return `
+      <a href="${src}" download="document.pdf" class="chat-pdf-attachment-card" style="display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.06);border:1px solid var(--border);padding:8px 12px;border-radius:10px;text-decoration:none;color:var(--text-primary);margin-top:6px;margin-bottom:6px;">
+        <span style="font-size:1.5rem;color:#ef4444;">📄</span>
+        <div style="text-align:left;">
+          <div style="font-size:0.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;color:var(--text-primary);">document.pdf</div>
+          <div style="font-size:0.65rem;color:var(--text-muted);">Download / බාගත කරන්න</div>
+        </div>
+      </a>
+    `;
+  }
+  return `<img src="${src}" alt="Attached Image">`;
+}
 
 /** Renders all current thumbnails into the preview container */
 function renderThumbnails() {
@@ -860,12 +1041,22 @@ function renderThumbnails() {
     return;
   }
   previewContainer.style.display = "flex";
-  previewContainer.innerHTML = attachedImages.map((b64, idx) => `
-    <div class="chat-thumb-card">
-      <img src="${b64}" alt="Image ${idx + 1}">
-      <button type="button" class="chat-thumb-remove" data-idx="${idx}" title="Remove">✕</button>
-    </div>
-  `).join("");
+  previewContainer.innerHTML = attachedImages.map((b64, idx) => {
+    const isPdf = b64.startsWith("data:application/pdf");
+    const previewContent = isPdf
+      ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;background:rgba(239,68,68,0.15);color:#ef4444;font-size:0.7rem;font-weight:bold;gap:2px;">
+           <span style="font-size:1.2rem;">📄</span>PDF
+         </div>`
+      : `<img src="${b64}" alt="Attachment ${idx + 1}">`;
+
+    return `
+      <div class="chat-thumb-card">
+        ${previewContent}
+        <button type="button" class="chat-thumb-remove" data-idx="${idx}" title="Remove">✕</button>
+      </div>
+    `;
+  }).join("");
+
   // Bind remove buttons
   previewContainer.querySelectorAll(".chat-thumb-remove").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -878,32 +1069,51 @@ function renderThumbnails() {
   if (btnAttach) btnAttach.classList.add("has-file");
 }
 
-/** Compress and push a File into attachedImages[], then re-render */
-async function addImageFile(file) {
-  if (!file || !file.type.startsWith("image/")) return;
-  try {
-    const b64 = await compressImage(file, 600, 600, 0.7);
-    attachedImages.push(b64);
-    renderThumbnails();
-  } catch (err) {
-    console.error("Image compress error:", err);
+/** Process and push a selected File into attachedImages[], then re-render */
+async function addAttachmentFile(file) {
+  if (!file) return;
+
+  if (file.type.startsWith("image/")) {
+    try {
+      const b64 = await compressImage(file, 600, 600, 0.7);
+      attachedImages.push(b64);
+      renderThumbnails();
+    } catch (err) {
+      console.error("Image compress error:", err);
+    }
+  } else if (file.type === "application/pdf") {
+    // 2MB size limit to avoid memory pressure / Firestore Document size limit
+    if (file.size > 2 * 1024 * 1024) {
+      alert(userProfile?.language === "sinhala"
+        ? "PDF ගොනුවේ ප්‍රමාණය 2MB ට වඩා අඩු විය යුතුය."
+        : "PDF file size should be under 2MB."
+      );
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        attachedImages.push(e.target.result);
+        renderThumbnails();
+      }
+    };
+    reader.readAsDataURL(file);
   }
 }
 
-// File picker — multiple files
+// File picker — multiple files (images & pdfs)
 if (btnAttach && fileInput) {
   btnAttach.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const files = Array.from(fileInput.files || []);
-    for (const f of files) await addImageFile(f);
-    fileInput.value = ""; // reset so same files can be re-selected
+    for (const f of files) await addAttachmentFile(f);
+    fileInput.value = ""; // reset
   });
 }
 
-// Clipboard paste — Ctrl+V on the text input or anywhere on the page
+// Clipboard paste — Ctrl+V on the text input
 const chatMsgInput = document.getElementById("chat-user-message");
 if (chatMsgInput) {
-  // Temporarily highlight the input to signal paste was captured
   chatMsgInput.addEventListener("paste", async (e) => {
     const items = Array.from(e.clipboardData?.items || []);
     const imageItem = items.find(it => it.type.startsWith("image/"));
@@ -912,7 +1122,7 @@ if (chatMsgInput) {
       chatMsgInput.classList.add("paste-active");
       setTimeout(() => chatMsgInput.classList.remove("paste-active"), 600);
       const file = imageItem.getAsFile();
-      await addImageFile(file);
+      await addAttachmentFile(file);
     }
   });
 }
@@ -939,7 +1149,7 @@ if (chatInputForm) {
       userBubbleHtml += `<div>${userMsg}</div>`;
     }
     for (const b64 of attachedImages) {
-      userBubbleHtml += `<img src="${b64}" alt="Sent Image">`;
+      userBubbleHtml += renderAttachmentMarkup(b64);
     }
     userBubbleHtml += `</div>`;
     chatEl.innerHTML += userBubbleHtml;
@@ -955,9 +1165,40 @@ if (chatInputForm) {
     typingEl.style.display = "flex";
     chatEl.scrollTop = chatEl.scrollHeight;
 
-    // 1. Write user message to Firestore
+    // 1. Create chat document in Firestore if new session
+    if (!currentChatId) {
+      try {
+        const initialTitle = userMsg 
+          ? (userMsg.substring(0, 30) + (userMsg.length > 30 ? "..." : "")) 
+          : (userProfile?.language === "sinhala" ? "රූපමය කතාබහ" : "Image Chat");
+        
+        const newChatRef = await addDoc(collection(db, "users", currentUserId, "chats"), {
+          title: initialTitle,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        currentChatId = newChatRef.id;
+
+        const titleDisplay = document.getElementById("chat-title-display");
+        if (titleDisplay) {
+          titleDisplay.innerText = initialTitle;
+        }
+      } catch (cErr) {
+        console.error("Error creating new chat session document:", cErr);
+      }
+    } else {
+      try {
+        await updateDoc(doc(db, "users", currentUserId, "chats", currentChatId), {
+          updatedAt: serverTimestamp()
+        });
+      } catch (uErr) {
+        console.warn("Failed to update chat timestamp:", uErr);
+      }
+    }
+
+    // 2. Write user message to Firestore
     try {
-      await addDoc(collection(db, "users", currentUserId, "chat_messages"), {
+      await addDoc(collection(db, "users", currentUserId, "chats", currentChatId, "messages"), {
         sender: "user",
         text: userMsg || "",
         images: activeImages.length > 0 ? activeImages : null,
@@ -975,9 +1216,7 @@ if (chatInputForm) {
       const data = b64.split(",")[1] || b64;
       parts.push({ inlineData: { data, mimeType } });
     }
-    // Gemini SDK: if only one text part, pass as string; otherwise as array
     const payload = parts.length === 1 && typeof parts[0] === "string" ? parts[0] : parts;
-
 
     let streamSuccess = false;
     let fullReplyText = "";
@@ -1011,7 +1250,6 @@ if (chatInputForm) {
       const sysInstr = getSystemInstruction(isSi, currentAge, currentHeight, currentWeight, currentWaist, currentChest, currentBmi, currentChatLogs);
       const config = { systemInstruction: sysInstr };
 
-      // Try remaining models on the current working key, then rotate key and try from first model
       for (let k = 0; k < KEYS.length; k++) {
         const keyIndex = (activeKeyIndex + k) % KEYS.length;
         const currentKey = KEYS[keyIndex];
@@ -1035,7 +1273,7 @@ if (chatInputForm) {
 
             const resStream = await newSession.sendMessageStream({ message: payload });
             currentChatSession = newSession;
-            activeKeyIndex = keyIndex; // update working key index
+            activeKeyIndex = keyIndex;
 
             typingEl.style.display = "none";
 
@@ -1062,9 +1300,9 @@ if (chatInputForm) {
     }
 
     if (streamSuccess) {
-      // 2. Write AI response to Firestore
+      // 3. Write AI response to Firestore
       try {
-        await addDoc(collection(db, "users", currentUserId, "chat_messages"), {
+        await addDoc(collection(db, "users", currentUserId, "chats", currentChatId, "messages"), {
           sender: "model",
           text: fullReplyText,
           timestamp: serverTimestamp()

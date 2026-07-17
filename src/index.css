@@ -578,10 +578,188 @@ body {
 /* AI Coaching Chat & Suggestions Page specific styling */
 .ai-layout {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 1.35fr 1fr;
   gap: 2rem;
   height: calc(100vh - 110px);
   overflow: hidden;
+}
+
+/* Chat + Sidebar Grid Wrapper */
+.chat-with-sidebar {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1rem;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Recent Chats Sidebar */
+.chats-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  height: 100%;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chats-sidebar-header {
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.01);
+}
+
+.chats-sidebar-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.new-chat-btn {
+  background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-purple) 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.new-chat-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.recent-chats-list {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.recent-chat-placeholder {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+/* Sidebar Toggle button inside chat panel header */
+.chats-sidebar-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.chats-sidebar-toggle-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+/* Individual recent chat item styling */
+.recent-chat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.recent-chat-item:hover {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border);
+}
+
+.recent-chat-item.active {
+  background: rgba(6, 182, 212, 0.08);
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
+.recent-chat-link {
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  display: block;
+  text-align: left;
+}
+
+.recent-chat-item.active .recent-chat-link {
+  color: var(--accent-cyan);
+  font-weight: 500;
+}
+
+.recent-chat-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recent-chat-item:hover .recent-chat-delete-btn {
+  opacity: 0.6;
+}
+
+.recent-chat-delete-btn:hover {
+  opacity: 1 !important;
+  color: var(--accent-rose);
+  background: rgba(244, 63, 94, 0.1);
+}
+
+/* Responsive Drawer for Sidebar */
+@media (max-width: 992px) {
+  .chat-with-sidebar {
+    grid-template-columns: 1fr;
+  }
+  .chats-sidebar {
+    position: absolute;
+    top: 0;
+    left: -260px;
+    width: 250px;
+    z-index: 100;
+    height: 100%;
+    box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+    background: var(--bg-card-opaque, #18181b);
+  }
+  .chats-sidebar.open {
+    left: 0;
+  }
 }
 
 /* Right-side Suggestions and plans box */
@@ -1150,8 +1328,12 @@ body {
     flex-direction: column;
     gap: 1.2rem;
   }
-  .chat-container-panel {
+  .chat-with-sidebar {
     height: 480px;
+    grid-template-columns: 1fr;
+  }
+  .chat-container-panel {
+    height: 100%;
     flex-shrink: 0;
   }
   .ai-side-container {
