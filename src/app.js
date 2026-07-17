@@ -17,7 +17,9 @@ import {
   getDocs,
   query,
   orderBy,
-  limit
+  limit,
+  addDoc,
+  serverTimestamp
 } from "firebase/firestore";
 import { GoogleGenAI } from "@google/genai";
 import { Chart } from "chart.js/auto";
@@ -29,7 +31,8 @@ const KEYS = [
   process.env.GEMINI_API_KEY_A,
   process.env.GEMINI_API_KEY_B,
   process.env.GEMINI_API_KEY_C,
-  process.env.GEMINI_API_KEY_D
+  process.env.GEMINI_API_KEY_D,
+  process.env.GEMINI_API_KEY_E
 ].filter(Boolean);
 
 let activeKeyIndex = 0;
@@ -89,11 +92,11 @@ async function aiGenerate(prompt, systemInstruction) {
 }
 
 // Create a stateful multi-turn chat (returns the chat session)
-async function aiChat(systemInstruction) {
+async function aiChat(systemInstruction, history = []) {
   return await callWithFallback(async (client, modelName) => {
     const config = {};
     if (systemInstruction) config.systemInstruction = systemInstruction;
-    const session = client.chats.create({ model: modelName, config });
+    const session = client.chats.create({ model: modelName, history, config });
     // Attach details to session for mid-chat recovery
     session.modelName = modelName;
     session.clientInstance = client;
@@ -208,6 +211,42 @@ function formatMarkdown(text) {
     .replace(/^# (.*?)$/gm,   "<h1>$1</h1>")
     .replace(/^\s*[-*]\s+(.*?)$/gm, "<li>$1</li>")
     .replace(/\n/g, "<br>");
+}
+
+async function compressImage(file, maxWidth = 600, maxHeight = 600, quality = 0.7) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const compressedBase64 = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressedBase64);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function todayStr() {
@@ -653,20 +692,65 @@ async function loadAiPageData() {
     currentChest  = ch;
     currentBmi    = bmi;
 
-    // Welcome bubble
+    // Load message history from Firestore
+    let dbHistory = [];
+    try {
+      const q = query(
+        collection(db, "users", currentUserId, "chat_messages"),
+        orderBy("timestamp", "asc"),
+        limit(40)
+      );
+      const snap = await getDocs(q);
+      snap.forEach(docSnap => {
+        dbHistory.push({ id: docSnap.id, ...docSnap.data() });
+      });
+    } catch (e) {
+      console.error("Error loading chat history from Firestore:", e);
+    }
+
+    // Populate chat window (either history or welcome bubble)
     const chatEl = document.getElementById("chat-messages");
     if (chatEl) {
-      const welcome = isSi
-        ? `ආයුබෝවන්! මම ඔබේ AuraFit AI සෞඛ්‍ය උපදේශකයායි.\nදත්ත ලැබුණා (වයස:${age}, බර:${w}kg, උස:${h}cm, BMI:${bmi}).\nඔබට ගැළපෙන **Meal Plan** හෝ **Workout Plan** සකසා දිය හැකි. අද කුමක් අවශ්‍ය ද?`
-        : `Hello! I am your AuraFit AI coach.\nProfile received — Age:${age}, Weight:${w}kg, Height:${h}cm, BMI:${bmi}.\nHow can I help you today?`;
-      chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
+      if (dbHistory.length === 0) {
+        const welcome = isSi
+          ? `ආයුබෝවන්! මම ඔබේ AuraFit AI සෞඛ්‍ය උපදේශකයායි.\nදත්ත ලැබුණා (වයස:${age}, බර:${w}kg, උස:${h}cm, BMI:${bmi}).\nඔබට ගැළපෙන **Meal Plan** හෝ **Workout Plan** සකසා දිය හැකි. අද කුමක් අවශ්‍ය ද?`
+          : `Hello! I am your AuraFit AI coach.\nProfile received — Age:${age}, Weight:${w}kg, Height:${h}cm, BMI:${bmi}.\nHow can I help you today?`;
+        chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
+      } else {
+      chatEl.innerHTML = dbHistory.map(msg => {
+          const senderClass = msg.sender === "user" ? "user" : "ai";
+          // Support both new `images` array and legacy `image` string
+          const imgs = msg.images || (msg.image ? [msg.image] : []);
+          const imgMarkup = imgs.map(src => `<img src="${src}" alt="Attached Image">`).join("");
+          const textMarkup = msg.text ? `<div>${msg.sender === "user" ? msg.text : formatMarkdown(msg.text)}</div>` : "";
+          return `<div class="chat-bubble ${senderClass}">${textMarkup}${imgMarkup}</div>`;
+        }).join("");
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
     }
 
     // Build rich context system instruction
     const sysInstr = getSystemInstruction(isSi, age, h, w, wa, ch, bmi, currentChatLogs);
 
-    // Start a NEW chat session each time
-    currentChatSession = await aiChat(sysInstr);
+    // Map DB history to Gemini SDK format
+    const geminiHistory = dbHistory.map(msg => {
+      const parts = [];
+      if (msg.text) parts.push({ text: msg.text });
+      // Support both new `images` array and legacy `image` string
+      const imgs = msg.images || (msg.image ? [msg.image] : []);
+      for (const src of imgs) {
+        const mimeType = src.match(/data:(.*?);base64/)?.[1] || "image/jpeg";
+        const data = src.split(",")[1] || src;
+        parts.push({ inlineData: { data, mimeType } });
+      }
+      return {
+        role: msg.sender === "user" ? "user" : "model",
+        parts: parts
+      };
+    });
+
+    // Start a chat session with history
+    currentChatSession = await aiChat(sysInstr, geminiHistory);
 
     // AI Suggestions Board
     loadSuggestionsBoard(age, h, w, wa, ch, bmi, isSi);
@@ -759,7 +843,82 @@ Output ONLY the 3 lines. No extra text.`;
   }
 }
 
-// AI Chat — send message
+// Image attachment handling state — supports multiple images
+let attachedImages = []; // array of base64 strings
+
+const btnAttach = document.getElementById("btn-chat-attach");
+const fileInput = document.getElementById("chat-image-input");
+const previewContainer = document.getElementById("chat-image-preview-container");
+
+/** Renders all current thumbnails into the preview container */
+function renderThumbnails() {
+  if (!previewContainer) return;
+  if (attachedImages.length === 0) {
+    previewContainer.style.display = "none";
+    previewContainer.innerHTML = "";
+    if (btnAttach) btnAttach.classList.remove("has-file");
+    return;
+  }
+  previewContainer.style.display = "flex";
+  previewContainer.innerHTML = attachedImages.map((b64, idx) => `
+    <div class="chat-thumb-card">
+      <img src="${b64}" alt="Image ${idx + 1}">
+      <button type="button" class="chat-thumb-remove" data-idx="${idx}" title="Remove">✕</button>
+    </div>
+  `).join("");
+  // Bind remove buttons
+  previewContainer.querySelectorAll(".chat-thumb-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const i = parseInt(btn.dataset.idx, 10);
+      attachedImages.splice(i, 1);
+      renderThumbnails();
+      if (attachedImages.length === 0 && btnAttach) btnAttach.classList.remove("has-file");
+    });
+  });
+  if (btnAttach) btnAttach.classList.add("has-file");
+}
+
+/** Compress and push a File into attachedImages[], then re-render */
+async function addImageFile(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  try {
+    const b64 = await compressImage(file, 600, 600, 0.7);
+    attachedImages.push(b64);
+    renderThumbnails();
+  } catch (err) {
+    console.error("Image compress error:", err);
+  }
+}
+
+// File picker — multiple files
+if (btnAttach && fileInput) {
+  btnAttach.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", async () => {
+    const files = Array.from(fileInput.files || []);
+    for (const f of files) await addImageFile(f);
+    fileInput.value = ""; // reset so same files can be re-selected
+  });
+}
+
+// Clipboard paste — Ctrl+V on the text input or anywhere on the page
+const chatMsgInput = document.getElementById("chat-user-message");
+if (chatMsgInput) {
+  // Temporarily highlight the input to signal paste was captured
+  chatMsgInput.addEventListener("paste", async (e) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItem = items.find(it => it.type.startsWith("image/"));
+    if (imageItem) {
+      e.preventDefault();
+      chatMsgInput.classList.add("paste-active");
+      setTimeout(() => chatMsgInput.classList.remove("paste-active"), 600);
+      const file = imageItem.getAsFile();
+      await addImageFile(file);
+    }
+  });
+}
+
+
+// AI Chat — send message (Streaming, Multimodal, Firestore logs)
 const chatInputForm = document.getElementById("chat-input-form");
 if (chatInputForm) {
   chatInputForm.addEventListener("submit", async (e) => {
@@ -767,26 +926,80 @@ if (chatInputForm) {
     if (!currentChatSession) return;
     const msgInput = document.getElementById("chat-user-message");
     const userMsg  = msgInput.value.trim();
-    if (!userMsg) return;
+    
+    // Enforce message constraint — need at least text or one image
+    if (!userMsg && attachedImages.length === 0) return;
 
     const chatEl   = document.getElementById("chat-messages");
     const typingEl = document.getElementById("typing-indicator");
 
-    chatEl.innerHTML += `<div class="chat-bubble user">${userMsg}</div>`;
+    // Display user message in UI immediately
+    let userBubbleHtml = `<div class="chat-bubble user">`;
+    if (userMsg) {
+      userBubbleHtml += `<div>${userMsg}</div>`;
+    }
+    for (const b64 of attachedImages) {
+      userBubbleHtml += `<img src="${b64}" alt="Sent Image">`;
+    }
+    userBubbleHtml += `</div>`;
+    chatEl.innerHTML += userBubbleHtml;
+
+    // Snapshot images & clear all inputs
+    const activeImages = [...attachedImages];
+    attachedImages = [];
     msgInput.value = "";
+    if (fileInput) fileInput.value = "";
+    renderThumbnails(); // hides the preview bar
+
     chatEl.scrollTop = chatEl.scrollHeight;
     typingEl.style.display = "flex";
     chatEl.scrollTop = chatEl.scrollHeight;
 
+    // 1. Write user message to Firestore
     try {
-      const res  = await currentChatSession.sendMessage({ message: userMsg });
-      const text = res.text;
+      await addDoc(collection(db, "users", currentUserId, "chat_messages"), {
+        sender: "user",
+        text: userMsg || "",
+        images: activeImages.length > 0 ? activeImages : null,
+        timestamp: serverTimestamp()
+      });
+    } catch (fsErr) {
+      console.error("Error logging user message to Firestore:", fsErr);
+    }
+
+    // Build multi-part payload: text string + image inlineData parts
+    const parts = [];
+    if (userMsg) parts.push(userMsg);
+    for (const b64 of activeImages) {
+      const mimeType = b64.match(/data:(.*?);base64/)?.[1] || "image/jpeg";
+      const data = b64.split(",")[1] || b64;
+      parts.push({ inlineData: { data, mimeType } });
+    }
+    // Gemini SDK: if only one text part, pass as string; otherwise as array
+    const payload = parts.length === 1 && typeof parts[0] === "string" ? parts[0] : parts;
+
+
+    let streamSuccess = false;
+    let fullReplyText = "";
+
+    try {
+      const responseStream = await currentChatSession.sendMessageStream({ message: payload });
       typingEl.style.display = "none";
-      chatEl.innerHTML += `<div class="chat-bubble ai chat-bubble-markdown">${formatMarkdown(text)}</div>`;
+
+      const aiBubble = document.createElement("div");
+      aiBubble.className = "chat-bubble ai chat-bubble-markdown";
+      chatEl.appendChild(aiBubble);
+      chatEl.scrollTop = chatEl.scrollHeight;
+
+      for await (const chunk of responseStream) {
+        fullReplyText += chunk.text;
+        aiBubble.innerHTML = formatMarkdown(fullReplyText);
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
+      streamSuccess = true;
     } catch (err) {
-      console.error("Chat error:", err);
+      console.error("Primary chat stream failed, executing fallback...", err);
       
-      let success = false;
       let history = [];
       try {
         history = await currentChatSession.getHistory();
@@ -804,7 +1017,6 @@ if (chatInputForm) {
         const currentKey = KEYS[keyIndex];
         const client = new GoogleGenAI({ apiKey: currentKey });
 
-        // If it's the current key, start from the next model. Otherwise, start from model index 0
         const startModelIndex = (keyIndex === activeKeyIndex)
           ? MODEL_CHAIN.indexOf(currentChatSession.modelName || "gemini-3.5-flash") + 1
           : 0;
@@ -812,7 +1024,7 @@ if (chatInputForm) {
         for (let i = startModelIndex; i < MODEL_CHAIN.length; i++) {
           const nextModel = MODEL_CHAIN[i];
           try {
-            console.warn(`[AuraFit AI Chat Fallback] Trying Key Index ${keyIndex} with Model ${nextModel}...`);
+            console.warn(`[AuraFit AI Stream Fallback] Trying Key Index ${keyIndex} with Model ${nextModel}...`);
             const newSession = client.chats.create({
               model: nextModel,
               history: history,
@@ -821,28 +1033,49 @@ if (chatInputForm) {
             newSession.modelName = nextModel;
             newSession.clientInstance = client;
 
-            const res2 = await newSession.sendMessage({ message: userMsg });
+            const resStream = await newSession.sendMessageStream({ message: payload });
             currentChatSession = newSession;
             activeKeyIndex = keyIndex; // update working key index
 
             typingEl.style.display = "none";
-            chatEl.innerHTML += `<div class="chat-bubble ai chat-bubble-markdown">${formatMarkdown(res2.text)}</div>`;
-            success = true;
+
+            const aiBubble = document.createElement("div");
+            aiBubble.className = "chat-bubble ai chat-bubble-markdown";
+            chatEl.appendChild(aiBubble);
+            chatEl.scrollTop = chatEl.scrollHeight;
+
+            fullReplyText = "";
+            for await (const chunk of resStream) {
+              fullReplyText += chunk.text;
+              aiBubble.innerHTML = formatMarkdown(fullReplyText);
+              chatEl.scrollTop = chatEl.scrollHeight;
+            }
+
+            streamSuccess = true;
             break;
           } catch (fallbackErr) {
-            console.error(`[AuraFit AI Chat Fallback] Failed for Key Index ${keyIndex} and Model ${nextModel}:`, fallbackErr);
+            console.error(`[AuraFit AI Stream Fallback] Failed for Key Index ${keyIndex} and Model ${nextModel}:`, fallbackErr);
           }
         }
-        if (success) break;
+        if (streamSuccess) break;
       }
+    }
 
-      if (success) {
-        chatEl.scrollTop = chatEl.scrollHeight;
-        return;
+    if (streamSuccess) {
+      // 2. Write AI response to Firestore
+      try {
+        await addDoc(collection(db, "users", currentUserId, "chat_messages"), {
+          sender: "model",
+          text: fullReplyText,
+          timestamp: serverTimestamp()
+        });
+      } catch (fsErr) {
+        console.error("Error writing AI response to Firestore:", fsErr);
       }
-
+    } else {
       typingEl.style.display = "none";
       chatEl.innerHTML += `<div class="chat-bubble ai" style="color:var(--accent-rose);">⚠️ ${userProfile?.language==="sinhala"?"ප්‍රතිචාරය ලබා ගැනීමේ දෝෂයක් ඇතිවිය. නැවත උත්සාහ කරන්න.":"Response failed. Please try again."}</div>`;
+      chatEl.scrollTop = chatEl.scrollHeight;
     }
     chatEl.scrollTop = chatEl.scrollHeight;
   });

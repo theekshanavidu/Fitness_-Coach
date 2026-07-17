@@ -41,6 +41,7 @@ jobs:
           GEMINI_API_KEY_B: ${{ secrets.GEMINI_API_KEY_B }}
           GEMINI_API_KEY_C: ${{ secrets.GEMINI_API_KEY_C }}
           GEMINI_API_KEY_D: ${{ secrets.GEMINI_API_KEY_D }}
+          GEMINI_API_KEY_E: ${{ secrets.GEMINI_API_KEY_E }}
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}

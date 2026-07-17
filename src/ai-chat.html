@@ -81,6 +81,11 @@
               </div>
             </div>
 
+            <!-- Image preview container (thumbnails rendered by JS) -->
+            <div id="chat-image-preview-container" class="chat-image-preview-container" style="display: none;">
+              <!-- thumbnail cards injected here by app.js -->
+            </div>
+
             <!-- Typing indicator -->
             <div id="typing-indicator" class="typing-indicator" style="display: none; margin: 0 1.5rem 1rem;">
               <div class="typing-dot"></div>
@@ -88,8 +93,10 @@
               <div class="typing-dot"></div>
             </div>
 
-            <form id="chat-input-form" class="chat-input-bar" onsubmit="event.preventDefault();">
-              <input type="text" id="chat-user-message" class="chat-text-input" placeholder="Ask AI anything... / AI එකෙන් ඕනෑම දෙයක් අසන්න..." required autocomplete="off">
+<form id="chat-input-form" class="chat-input-bar" onsubmit="event.preventDefault();">
+              <input type="file" id="chat-image-input" accept="image/*" multiple style="display: none;">
+              <button type="button" id="btn-chat-attach" class="chat-attach-btn" title="Attach Images / රූප එකතු කරන්න">📎</button>
+              <input type="text" id="chat-user-message" class="chat-text-input" placeholder="Ask AI anything… or paste an image (Ctrl+V) / රූපයක් paste කරන්න..." autocomplete="off">
               <button type="submit" id="btn-chat-send" class="chat-send-btn">🚀</button>
             </form>
           </section>
