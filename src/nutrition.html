@@ -266,7 +266,7 @@
               <div class="form-group" style="margin-bottom: 1.2rem;">
                 <label class="input-label" style="margin-bottom: 0.4rem;">Select Activity Level</label>
                 <div class="option-card-group" style="flex-wrap: wrap;">
-                  <div class="option-card active" style="flex: 1 1 45%; margin-bottom: 0.5rem;" id="activity-sedentary" onclick="selectActivity('sedentary', 1.2)">
+                  <div class="option-card" style="flex: 1 1 45%; margin-bottom: 0.5rem;" id="activity-sedentary" onclick="selectActivity('sedentary', 1.2)">
                     <div class="option-card-title">Sedentary</div>
                     <div class="option-card-desc">Little to no exercise</div>
                   </div>
@@ -293,7 +293,7 @@
                     <div class="option-card-title">Weight Loss</div>
                     <div class="option-card-desc">Caloric deficit</div>
                   </div>
-                  <div class="option-card active" id="goal-maintain" onclick="selectGoal('maintain')">
+                  <div class="option-card" id="goal-maintain" onclick="selectGoal('maintain')">
                     <div class="option-card-title">Maintain</div>
                     <div class="option-card-desc">Caloric balance</div>
                   </div>
@@ -315,7 +315,7 @@
                 <div class="macro-val" id="val-tdee">-- <span>kcal</span></div>
                 <span class="stat-label" id="val-bmr-lbl" style="font-size: 0.75rem;">BMR: -- kcal</span>
                 <div class="macro-bar-container">
-                  <div class="macro-bar" id="bar-tdee" style="width: 75%;"></div>
+                  <div class="macro-bar" id="bar-tdee" style="width: 0%;"></div>
                 </div>
               </div>
               <div class="macro-card emerald">
@@ -323,7 +323,7 @@
                 <div class="macro-val" id="val-protein">-- <span>g</span></div>
                 <span class="stat-label" id="val-protein-lbl" style="font-size: 0.75rem;">Based on goal</span>
                 <div class="macro-bar-container">
-                  <div class="macro-bar" id="bar-protein" style="width: 60%;"></div>
+                  <div class="macro-bar" id="bar-protein" style="width: 0%;"></div>
                 </div>
               </div>
             </div>
@@ -334,7 +334,7 @@
                 <h2 class="panel-title">🤖 AI Nutrition Insights</h2>
               </div>
               <div id="ai-nutrition-advice" class="tune-results-box" style="max-height: none; height: 100%; min-height: 200px;">
-                Loading personalized meal distribution and macros advice from Gemini...
+                👉 Please select both your Activity Level and Fitness Goal to generate AI Nutrition advice.
               </div>
             </article>
           </div>
@@ -345,15 +345,16 @@
 
   <script type="module" src="app.js"></script>
   <script>
-    // Selections variables
-    let selectedActivityFactor = 1.2;
-    let selectedActivityName = 'sedentary';
-    let selectedGoal = 'maintain';
+    // Selections variables - no pre-selection by default
+    let selectedActivityFactor = null;
+    let selectedActivityName = null;
+    let selectedGoal = null;
 
     function selectActivity(activity, factor) {
       const activities = ['sedentary', 'light', 'moderate', 'active'];
       activities.forEach(act => {
-        document.getElementById(`activity-${act}`).classList.toggle('active', act === activity);
+        const el = document.getElementById(`activity-${act}`);
+        if (el) el.classList.toggle('active', act === activity);
       });
       selectedActivityFactor = factor;
       selectedActivityName = activity;
@@ -363,15 +364,47 @@
     function selectGoal(goal) {
       const goals = ['loss', 'maintain', 'gain'];
       goals.forEach(g => {
-        document.getElementById(`goal-${g}`).classList.toggle('active', g === goal);
+        const el = document.getElementById(`goal-${g}`);
+        if (el) el.classList.toggle('active', g === goal);
       });
       selectedGoal = goal;
       triggerRecalculate();
     }
 
+    function setSelectedOptions(activityName, activityFactor, goal) {
+      const activities = ['sedentary', 'light', 'moderate', 'active'];
+      activities.forEach(act => {
+        const el = document.getElementById(`activity-${act}`);
+        if (el) el.classList.toggle('active', act === activityName);
+      });
+      const goals = ['loss', 'maintain', 'gain'];
+      goals.forEach(g => {
+        const el = document.getElementById(`goal-${g}`);
+        if (el) el.classList.toggle('active', g === goal);
+      });
+      selectedActivityName = activityName;
+      selectedActivityFactor = activityFactor;
+      selectedGoal = goal;
+    }
+
+    function resetSelectedOptions() {
+      const activities = ['sedentary', 'light', 'moderate', 'active'];
+      activities.forEach(act => {
+        const el = document.getElementById(`activity-${act}`);
+        if (el) el.classList.remove('active');
+      });
+      const goals = ['loss', 'maintain', 'gain'];
+      goals.forEach(g => {
+        const el = document.getElementById(`goal-${g}`);
+        if (el) el.classList.remove('active');
+      });
+      selectedActivityName = null;
+      selectedActivityFactor = null;
+      selectedGoal = null;
+    }
+
     function triggerRecalculate() {
       if (window.calculateNutrition) {
-        // Gender is resolved in app.js from profile context, app.js calculation reads it
         window.calculateNutrition(null, selectedActivityFactor, selectedGoal);
       }
     }
@@ -379,6 +412,8 @@
     // Expose selections globally
     window.selectActivity = selectActivity;
     window.selectGoal = selectGoal;
+    window.setSelectedOptions = setSelectedOptions;
+    window.resetSelectedOptions = resetSelectedOptions;
     window.getSelectedActivityFactor = () => selectedActivityFactor;
     window.getSelectedActivityName = () => selectedActivityName;
     window.getSelectedGoal = () => selectedGoal;

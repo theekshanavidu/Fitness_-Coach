@@ -106,6 +106,80 @@ async function aiChat(systemInstruction, history = []) {
   });
 }
 
+/** Detects if the prompt is asking to draw/generate an image */
+function isImageGenerationPrompt(text) {
+  if (!text) return false;
+  const t = text.toLowerCase().trim();
+  if (t.startsWith("/draw") || t.startsWith("/generate") || t.startsWith("/image")) return true;
+  
+  const keywords = [
+    "draw a", "generate an image", "create a picture", "create an image",
+    "sketch a", "paint a", "photo of", "රූපයක් අඳින්න", "පින්තූරයක් අඳින්න", 
+    "පින්තූරයක් හදන්න", "රූපයක් හදන්න", "image එකක් හදන්න", "drawing of"
+  ];
+  return keywords.some(kw => t.includes(kw));
+}
+
+/** Converts imageBytes (Uint8Array or base64 string) to a safe base64 data URL */
+function imageBytesToDataUrl(imageBytes, mimeType = "image/jpeg") {
+  if (typeof imageBytes === "string") {
+    // Already a base64 string
+    return `data:${mimeType};base64,${imageBytes}`;
+  }
+  // Uint8Array — convert to base64
+  let binary = "";
+  const bytes = new Uint8Array(imageBytes);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+// Image generation model chain — tries in order until one works
+const IMAGE_GEN_MODELS = [
+  "gemini-2.5-flash-image",
+  "gemini-2.0-flash-exp",
+  "gemini-2.0-flash",
+];
+
+/** Generates an image using Pollinations.ai (free, no API key needed) */
+async function generateAiImage(promptText) {
+  // Strip trigger prefix if present
+  let cleanPrompt = promptText;
+  if (promptText.toLowerCase().startsWith("/draw"))          cleanPrompt = promptText.slice(5).trim();
+  else if (promptText.toLowerCase().startsWith("/generate")) cleanPrompt = promptText.slice(9).trim();
+  else if (promptText.toLowerCase().startsWith("/image"))    cleanPrompt = promptText.slice(6).trim();
+  if (!cleanPrompt) cleanPrompt = promptText;
+
+  console.log(`[AuraFit ImgGen] 🎨 Generating via Pollinations.ai: "${cleanPrompt}"`);
+
+  // Pollinations.ai — completely free, no API key required
+  const seed = Math.floor(Math.random() * 999999);
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=768&height=768&nologo=true&seed=${seed}`;
+
+  console.log(`[AuraFit ImgGen] 🌐 URL: ${url}`);
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Pollinations fetch failed: ${res.status} ${res.statusText}`);
+
+  const blob = await res.blob();
+  const mimeType = blob.type || "image/jpeg";
+
+  // Convert blob → base64 data URL for rendering + Firestore storage
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => { 
+      console.log(`[AuraFit ImgGen] ✅ Image ready! size=${blob.size} bytes`);
+      resolve(reader.result); 
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+
+
+
 // Helper to construct structured health context & logs instruction
 function getSystemInstruction(isSi, age, h, w, wa, ch, bmi, logs) {
   let progressStr = "No historical log data available yet.";
@@ -675,6 +749,90 @@ async function renderProgressChart() {
 // AI CHAT PAGE (Multi-Session with Recent Chats Sidebar)
 // =========================================================================
 
+/** Copies the content of an AI chat bubble or panel to clipboard */
+function copyChatMessage(btn) {
+  const container = btn.closest(".chat-bubble") || btn.closest(".tune-results-box") || btn.closest(".glass-panel") || btn.parentElement.parentElement;
+  if (!container) return;
+
+  const bodyEl = container.querySelector(".msg-body") || container;
+  let textToCopy = "";
+
+  if (bodyEl) {
+    const clone = bodyEl.cloneNode(true);
+    const actions = clone.querySelector(".chat-bubble-actions");
+    if (actions) actions.remove();
+    textToCopy = clone.innerText.trim();
+  } else {
+    textToCopy = container.innerText.trim();
+  }
+
+  const isSi = userProfile?.language === "sinhala";
+
+  const successHandler = () => {
+    const originalContent = btn.dataset.origHtml || btn.innerHTML;
+    btn.dataset.origHtml = originalContent;
+    btn.classList.add("copied");
+    btn.innerHTML = `✅ ${isSi ? "කොපි විය!" : "Copied!"}`;
+    setTimeout(() => {
+      btn.innerHTML = originalContent;
+      btn.classList.remove("copied");
+    }, 2000);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(textToCopy)
+      .then(successHandler)
+      .catch(() => {
+        fallbackCopyText(textToCopy);
+        successHandler();
+      });
+  } else {
+    fallbackCopyText(textToCopy);
+    successHandler();
+  }
+}
+
+function fallbackCopyText(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+window.copyChatMessage = copyChatMessage;
+
+/** Animates text appearing character-by-character / chunk-by-chunk like live AI message typing */
+function typeWriterEffect(targetElement, fullText, isSi, onComplete) {
+  if (!targetElement) return;
+  targetElement.classList.remove("loading");
+  
+  targetElement.innerHTML = `<div class="msg-body"></div>`;
+  const msgBody = targetElement.querySelector(".msg-body");
+  
+  let index = 0;
+  const totalLength = fullText.length;
+  // Calculate dynamic chunk size to ensure smooth typing animation (~2-3 seconds total duration)
+  const chunkSize = Math.max(3, Math.ceil(totalLength / 80));
+
+  const timer = setInterval(() => {
+    index += chunkSize;
+    if (index >= totalLength) {
+      index = totalLength;
+      clearInterval(timer);
+      if (msgBody) msgBody.innerHTML = formatMarkdown(fullText);
+      if (onComplete) onComplete();
+    } else {
+      const currentPartial = fullText.substring(0, index);
+      if (msgBody) msgBody.innerHTML = formatMarkdown(currentPartial) + `<span class="typing-cursor">▌</span>`;
+    }
+    targetElement.scrollTop = targetElement.scrollHeight;
+  }, 18);
+}
+
 /** Starts a blank new chat session */
 async function createNewChat() {
   currentChatId = null;
@@ -684,7 +842,8 @@ async function createNewChat() {
     const welcome = isSi
       ? `ආයුබෝවන්! මම ඔබේ AuraFit AI සෞඛ්‍ය උපදේශකයායි.\nදත්ත ලැබුණා (වයස:${currentAge}, බර:${currentWeight}kg, උස:${currentHeight}cm, BMI:${currentBmi}).\nඔබට ගැළපෙන **Meal Plan** හෝ **Workout Plan** සකසා දිය හැකි. අද කුමක් අවශ්‍ය ද?`
       : `Hello! I am your AuraFit AI coach.\nProfile received — Age:${currentAge}, Weight:${currentWeight}kg, Height:${currentHeight}cm, BMI:${currentBmi}.\nHow can I help you today?`;
-    chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
+    const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
+    chatEl.innerHTML = `<div class="chat-bubble ai chat-bubble-markdown"><div class="msg-body">${formatMarkdown(welcome)}</div><div class="chat-bubble-actions"><button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button></div></div>`;
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
@@ -761,14 +920,21 @@ async function loadChat(chatId) {
       const welcome = userProfile?.language === "sinhala"
         ? `ආයුබෝවන්! මම ඔබේ AuraFit AI සෞඛ්‍ය උපදේශකයායි.\nදත්ත ලැබුණා (වයස:${currentAge}, බර:${currentWeight}kg, උස:${currentHeight}cm, BMI:${currentBmi}).\nඔබට ගැළපෙන **Meal Plan** හෝ **Workout Plan** සකසා දිය හැකි. අද කුමක් අවශ්‍ය ද?`
         : `Hello! I am your AuraFit AI coach.\nProfile received — Age:${currentAge}, Weight:${currentWeight}kg, Height:${currentHeight}cm, BMI:${currentBmi}.\nHow can I help you today?`;
-      chatEl.innerHTML = `<div class="chat-bubble ai">${formatMarkdown(welcome)}</div>`;
+      const copyLabel = userProfile?.language === "sinhala" ? "කොපි කරන්න" : "Copy";
+      chatEl.innerHTML = `<div class="chat-bubble ai chat-bubble-markdown"><div class="msg-body">${formatMarkdown(welcome)}</div><div class="chat-bubble-actions"><button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button></div></div>`;
     } else {
+      const isSi = userProfile?.language === "sinhala";
+      const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
       chatEl.innerHTML = dbHistory.map(msg => {
-        const senderClass = msg.sender === "user" ? "user" : "ai";
         const imgs = msg.images || (msg.image ? [msg.image] : []);
-        const imgMarkup = imgs.map(src => renderAttachmentMarkup(src)).join("");
-        const textMarkup = msg.text ? `<div>${msg.sender === "user" ? msg.text : formatMarkdown(msg.text)}</div>` : "";
-        return `<div class="chat-bubble ${senderClass}">${textMarkup}${imgMarkup}</div>`;
+        const imgMarkup = imgs.map(src => renderAttachmentMarkup(src, msg.sender)).join("");
+        if (msg.sender === "user") {
+          const textMarkup = msg.text ? `<div>${msg.text}</div>` : "";
+          return `<div class="chat-bubble user">${textMarkup}${imgMarkup}</div>`;
+        } else {
+          const textMarkup = msg.text ? formatMarkdown(msg.text) : "";
+          return `<div class="chat-bubble ai chat-bubble-markdown"><div class="msg-body">${textMarkup}${imgMarkup}</div><div class="chat-bubble-actions"><button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button></div></div>`;
+        }
       }).join("");
       chatEl.scrollTop = chatEl.scrollHeight;
     }
@@ -918,7 +1084,8 @@ async function loadAiPageData() {
     // Start with a blank New Chat session by default
     await createNewChat();
 
-    // AI Suggestions Board
+    // AI Suggestions Board - load once daily per user (resets at midnight 12:00 AM)
+    loadSuggestionsBoard(age, h, w, wa, ch, bmi, isSi);
   } catch (err) { console.error("AI page init error:", err); }
 }
 
@@ -933,7 +1100,41 @@ async function loadSuggestionsBoard(age, height, weight, waist, chest, bmi, isSi
     return;
   }
 
-  board.innerHTML = `<div class="suggestion-item" style="opacity:0.5"><div class="suggestion-icon">⏳</div><div class="suggestion-content"><div class="suggestion-title">${isSi?"යෝජනා ලබා ගනිමින්…":"Loading suggestions…"}</div></div></div>`;
+  // Get local date string YYYY-MM-DD to verify if 12:00 AM midnight has passed
+  const now = new Date();
+  const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const cacheKey = `aura_daily_suggestions_${currentUserId || 'default'}`;
+
+  const renderItems = (items) => {
+    board.innerHTML = items.map(item => {
+      const [icon, title, desc] = item.split("|");
+      return `
+        <div class="suggestion-item">
+          <div class="suggestion-icon">${(icon || '⚡').trim()}</div>
+          <div class="suggestion-content">
+            <div class="suggestion-title">${(title || '').trim()}</div>
+            <div class="suggestion-desc">${(desc || '').trim()}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  };
+
+  // 1. Check if cached suggestions for today already exist
+  try {
+    const cachedDataStr = localStorage.getItem(cacheKey);
+    if (cachedDataStr) {
+      const cachedData = JSON.parse(cachedDataStr);
+      if (cachedData && cachedData.date === dateKey && Array.isArray(cachedData.items) && cachedData.items.length >= 3 && cachedData.isSi === isSi) {
+        renderItems(cachedData.items);
+        return; // Use cached suggestions for the entire day!
+      }
+    }
+  } catch (e) {
+    console.warn("Error reading suggestions cache:", e);
+  }
+
+  board.innerHTML = `<div class="suggestion-item" style="opacity:0.5"><div class="suggestion-icon">⏳</div><div class="suggestion-content"><div class="suggestion-title">${isSi ? "යෝජනා ලබා ගනිමින්…" : "Loading suggestions…"}</div></div></div>`;
 
   // Default suggestions to fall back on or backfill if AI fails
   const defaultSi = [
@@ -977,34 +1178,27 @@ Output ONLY the 3 lines. No extra text.`;
       finalItems.push(defaults[i]);
     }
 
-    board.innerHTML = finalItems.map(item => {
-      const [icon, title, desc] = item.split("|");
-      return `
-        <div class="suggestion-item">
-          <div class="suggestion-icon">${icon.trim()}</div>
-          <div class="suggestion-content">
-            <div class="suggestion-title">${title.trim()}</div>
-            <div class="suggestion-desc">${desc.trim()}</div>
-          </div>
-        </div>
-      `;
-    }).join("");
+    // Save to local cache for today until midnight
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({
+        date: dateKey,
+        items: finalItems,
+        isSi: isSi
+      }));
+    } catch (e) {}
+
+    renderItems(finalItems);
 
   } catch (err) {
     console.error("Suggestions generation error (loading defaults):", err);
-    // Display 3 default suggestions directly
-    board.innerHTML = defaults.map(item => {
-      const [icon, title, desc] = item.split("|");
-      return `
-        <div class="suggestion-item">
-          <div class="suggestion-icon">${icon.trim()}</div>
-          <div class="suggestion-content">
-            <div class="suggestion-title">${title.trim()}</div>
-            <div class="suggestion-desc">${desc.trim()}</div>
-          </div>
-        </div>
-      `;
-    }).join("");
+    renderItems(defaults);
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({
+        date: dateKey,
+        items: defaults,
+        isSi: isSi
+      }));
+    } catch (e) {}
   }
 }
 
@@ -1016,7 +1210,7 @@ const fileInput = document.getElementById("chat-image-input");
 const previewContainer = document.getElementById("chat-image-preview-container");
 
 /** Renders attachment card UI for a base64 string */
-function renderAttachmentMarkup(src) {
+function renderAttachmentMarkup(src, sender = "user") {
   if (src.startsWith("data:application/pdf")) {
     return `
       <a href="${src}" download="document.pdf" class="chat-pdf-attachment-card" style="display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.06);border:1px solid var(--border);padding:8px 12px;border-radius:10px;text-decoration:none;color:var(--text-primary);margin-top:6px;margin-bottom:6px;">
@@ -1026,6 +1220,18 @@ function renderAttachmentMarkup(src) {
           <div style="font-size:0.65rem;color:var(--text-muted);">Download / බාගත කරන්න</div>
         </div>
       </a>
+    `;
+  }
+
+  // If the image was sent by the AI model, render a downloadable card overlay
+  if (sender === "model") {
+    return `
+      <div class="generated-image-container" style="position: relative; max-width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); margin-top: 6px; margin-bottom: 6px;">
+        <img src="${src}" alt="Generated Image" style="width: 100%; height: auto; display: block; max-width: 100% !important; max-height: none !important;">
+        <a href="${src}" download="generated-image.jpg" class="download-badge-btn" style="position: absolute; bottom: 8px; right: 8px; background: rgba(12,16,27,0.85); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); border-radius: 6px; padding: 6px 10px; font-size: 0.7rem; text-decoration: none; display: flex; align-items: center; gap: 4px; font-weight: bold; cursor: pointer; transition: all 0.2s;">
+          📥 Download / බාගත කරන්න
+        </a>
+      </div>
     `;
   }
   return `<img src="${src}" alt="Attached Image">`;
@@ -1133,7 +1339,6 @@ const chatInputForm = document.getElementById("chat-input-form");
 if (chatInputForm) {
   chatInputForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!currentChatSession) return;
     const msgInput = document.getElementById("chat-user-message");
     const userMsg  = msgInput.value.trim();
     
@@ -1142,6 +1347,80 @@ if (chatInputForm) {
 
     const chatEl   = document.getElementById("chat-messages");
     const typingEl = document.getElementById("typing-indicator");
+
+    // ── IMAGE GENERATION INTERCEPT (runs before chat-session check) ──────────
+    if (userMsg && isImageGenerationPrompt(userMsg)) {
+      // Show user bubble
+      chatEl.innerHTML += `<div class="chat-bubble user"><div>${userMsg}</div></div>`;
+      msgInput.value = "";
+      chatEl.scrollTop = chatEl.scrollHeight;
+      typingEl.style.display = "flex";
+      chatEl.scrollTop = chatEl.scrollHeight;
+
+      // Ensure chat doc exists in Firestore
+      if (!currentChatId) {
+        try {
+          const initialTitle = userMsg.substring(0, 30) + (userMsg.length > 30 ? "..." : "");
+          const newChatRef = await addDoc(collection(db, "users", currentUserId, "chats"), {
+            title: initialTitle,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+          currentChatId = newChatRef.id;
+          const titleDisplay = document.getElementById("chat-title-display");
+          if (titleDisplay) titleDisplay.innerText = initialTitle;
+        } catch (cErr) {
+          console.error("Error creating chat doc for image gen:", cErr);
+        }
+      } else {
+        try {
+          await updateDoc(doc(db, "users", currentUserId, "chats", currentChatId), { updatedAt: serverTimestamp() });
+        } catch (uErr) { /* ignore */ }
+      }
+
+      // Save user message to Firestore
+      try {
+        await addDoc(collection(db, "users", currentUserId, "chats", currentChatId, "messages"), {
+          sender: "user", text: userMsg, timestamp: serverTimestamp()
+        });
+      } catch (fsErr) { console.error("Error saving user image-gen msg:", fsErr); }
+
+      try {
+        const dataUrl = await generateAiImage(userMsg);
+        typingEl.style.display = "none";
+
+        // Render the AI bubble with the generated image & download button
+        const imgCaption = userProfile?.language === "sinhala"
+          ? "🎨 ඔබගේ රූපය සාර්ථකව නිර්මාණය විය!"
+          : "🎨 Your image has been generated!";
+        const imgBubble = document.createElement("div");
+        imgBubble.className = "chat-bubble ai";
+        imgBubble.innerHTML = `<div style="margin-bottom:8px;font-weight:500;">${imgCaption}</div>${renderAttachmentMarkup(dataUrl, "model")}`;
+        chatEl.appendChild(imgBubble);
+        chatEl.scrollTop = chatEl.scrollHeight;
+
+        // Save AI image response to Firestore
+        try {
+          await addDoc(collection(db, "users", currentUserId, "chats", currentChatId, "messages"), {
+            sender: "model",
+            text: imgCaption,
+            images: [dataUrl],
+            timestamp: serverTimestamp()
+          });
+        } catch (fsErr) { console.error("Error saving AI image to Firestore:", fsErr); }
+
+      } catch (imgErr) {
+        typingEl.style.display = "none";
+        const errMsg = userProfile?.language === "sinhala"
+          ? "⚠️ රූපය නිර්මාණය කිරීමේ දෝෂයක් ඇතිවිය. නැවත උත්සාහ කරන්න."
+          : "⚠️ Image generation failed. Please try again.";
+        chatEl.innerHTML += `<div class="chat-bubble ai" style="color:var(--accent-rose);">${errMsg}</div>`;
+        console.error("Image generation error:", imgErr);
+      }
+      chatEl.scrollTop = chatEl.scrollHeight;
+      return; // ← skip normal chat flow
+    }
+    // ── END IMAGE GENERATION INTERCEPT ──────────────────────────────────────
 
     // Display user message in UI immediately
     let userBubbleHtml = `<div class="chat-bubble user">`;
@@ -1227,14 +1506,25 @@ if (chatInputForm) {
 
       const aiBubble = document.createElement("div");
       aiBubble.className = "chat-bubble ai chat-bubble-markdown";
+      const msgBody = document.createElement("div");
+      msgBody.className = "msg-body";
+      aiBubble.appendChild(msgBody);
       chatEl.appendChild(aiBubble);
       chatEl.scrollTop = chatEl.scrollHeight;
 
       for await (const chunk of responseStream) {
         fullReplyText += chunk.text;
-        aiBubble.innerHTML = formatMarkdown(fullReplyText);
+        msgBody.innerHTML = formatMarkdown(fullReplyText);
         chatEl.scrollTop = chatEl.scrollHeight;
       }
+
+      const isSi = userProfile?.language === "sinhala";
+      const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
+      const actionsDiv = document.createElement("div");
+      actionsDiv.className = "chat-bubble-actions";
+      actionsDiv.innerHTML = `<button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button>`;
+      aiBubble.appendChild(actionsDiv);
+
       streamSuccess = true;
     } catch (err) {
       console.error("Primary chat stream failed, executing fallback...", err);
@@ -1279,15 +1569,24 @@ if (chatInputForm) {
 
             const aiBubble = document.createElement("div");
             aiBubble.className = "chat-bubble ai chat-bubble-markdown";
+            const msgBody = document.createElement("div");
+            msgBody.className = "msg-body";
+            aiBubble.appendChild(msgBody);
             chatEl.appendChild(aiBubble);
             chatEl.scrollTop = chatEl.scrollHeight;
 
             fullReplyText = "";
             for await (const chunk of resStream) {
               fullReplyText += chunk.text;
-              aiBubble.innerHTML = formatMarkdown(fullReplyText);
+              msgBody.innerHTML = formatMarkdown(fullReplyText);
               chatEl.scrollTop = chatEl.scrollHeight;
             }
+
+            const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
+            const actionsDiv = document.createElement("div");
+            actionsDiv.className = "chat-bubble-actions";
+            actionsDiv.innerHTML = `<button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button>`;
+            aiBubble.appendChild(actionsDiv);
 
             streamSuccess = true;
             break;
@@ -1353,8 +1652,14 @@ Does this suit their profile? Critique and give 3-4 specific improvement suggest
 Respond 100% in ${isSi ? "Sinhala (සිංහල)" : "English"}.`;
 
       const resultText = await aiGenerate(prompt);
-      resultsBox.classList.remove("loading");
-      resultsBox.innerHTML = formatMarkdown(resultText);
+      typeWriterEffect(resultsBox, resultText, isSi, () => {
+        const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "chat-bubble-actions";
+        actionsDiv.style.marginTop = "1rem";
+        actionsDiv.innerHTML = `<button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button>`;
+        resultsBox.appendChild(actionsDiv);
+      });
     } catch (err) {
       console.error("Plan review error:", err);
       resultsBox.classList.remove("loading");
@@ -1392,13 +1697,75 @@ async function loadNutritionPageData() {
     document.getElementById("calc-pill-height").innerText = currentHeight;
     document.getElementById("calc-pill-age").innerText    = currentAge;
 
-    const factor = window.getSelectedActivityFactor ? window.getSelectedActivityFactor() : 1.2;
-    const goal   = window.getSelectedGoal           ? window.getSelectedGoal()           : "maintain";
-    calculateNutrition(null, factor, goal);
+    // Check if daily cache exists for today (resets after 12:00 AM midnight)
+    const now = new Date();
+    const todayDateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const cacheKey = `aura_daily_nutrition_${currentUserId}`;
+    let loadedFromCache = false;
+
+    try {
+      const cachedStr = localStorage.getItem(cacheKey);
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (cached && cached.date === todayDateKey && cached.activityName && cached.goal) {
+          // Restore selected active option cards UI
+          if (window.setSelectedOptions) {
+            window.setSelectedOptions(cached.activityName, cached.activityFactor, cached.goal);
+          }
+          // Calculate macros with cached options
+          calculateNutrition(null, cached.activityFactor, cached.goal, true);
+          // Render cached advice directly without API call!
+          const box = document.getElementById("ai-nutrition-advice");
+          if (box && cached.resultText) {
+            const isSi = userProfile?.language === "sinhala";
+            const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
+            box.classList.remove("loading");
+            box.innerHTML = `
+              <div class="msg-body">${formatMarkdown(cached.resultText)}</div>
+              <div class="chat-bubble-actions" style="margin-top: 1rem;">
+                <button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button>
+              </div>
+            `;
+          }
+          loadedFromCache = true;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load daily nutrition cache:", e);
+    }
+
+    if (!loadedFromCache) {
+      // Unselected default state: clear active option cards and prompt selection
+      if (window.resetSelectedOptions) window.resetSelectedOptions();
+      calculateNutrition(null, null, null);
+    }
   } catch (err) { console.error("Nutrition page error:", err); }
 }
 
-function calculateNutrition(_ignored, activityFactor, goal) {
+function calculateNutrition(_ignored, activityFactor, goal, skipAiCall = false) {
+  const box = document.getElementById("ai-nutrition-advice");
+
+  if (!activityFactor || !goal) {
+    document.getElementById("val-tdee").innerHTML    = `-- <span>kcal</span>`;
+    document.getElementById("val-bmr-lbl").innerText = `BMR: -- kcal`;
+    document.getElementById("val-protein").innerHTML  = `-- <span>g</span>`;
+    document.getElementById("val-protein-lbl").innerText = `Based on goal`;
+
+    const bt = document.getElementById("bar-tdee");
+    const bp = document.getElementById("bar-protein");
+    if (bt) bt.style.width = `0%`;
+    if (bp) bp.style.width = `0%`;
+
+    if (box) {
+      const isSi = userProfile?.language === "sinhala";
+      box.classList.remove("loading");
+      box.innerHTML = isSi
+        ? `<div style="padding:1rem;color:var(--accent-cyan);font-weight:500;">👉 කරුණාකර පෝෂණ උපදෙස් ලබා ගැනීමට ඔබේ ක්‍රියාශීලී මට්ටම (Activity Level) සහ ඉලක්කය (Fitness Goal) තෝරන්න.</div>`
+        : `<div style="padding:1rem;color:var(--accent-cyan);font-weight:500;">👉 Please select both your Activity Level and Fitness Goal to calculate macros and generate AI advice.</div>`;
+    }
+    return;
+  }
+
   if (!currentWeight || !currentHeight || !currentAge || !userProfile) return;
 
   const gender = userProfile.gender || "male";
@@ -1423,34 +1790,91 @@ function calculateNutrition(_ignored, activityFactor, goal) {
   if (bt) bt.style.width = `${Math.min((cals/3500)*100, 100)}%`;
   if (bp) bp.style.width = `${Math.min((protein/200)*100, 100)}%`;
 
-  const actName = window.getSelectedActivityName ? window.getSelectedActivityName() : "sedentary";
-  triggerNutritionAiAdvice(currentWeight, currentHeight, currentAge, bmr, cals, protein, gender, actName, goal);
+  if (!skipAiCall) {
+    const actName = window.getSelectedActivityName ? window.getSelectedActivityName() : "sedentary";
+    triggerNutritionAiAdvice(currentWeight, currentHeight, currentAge, bmr, cals, protein, gender, actName, goal, activityFactor);
+  }
 }
 window.calculateNutrition = calculateNutrition;
 
-function triggerNutritionAiAdvice(weight, height, age, bmr, tdee, protein, gender, activity, goal) {
+function triggerNutritionAiAdvice(weight, height, age, bmr, tdee, protein, gender, activity, goal, activityFactor) {
   const box = document.getElementById("ai-nutrition-advice");
   if (!box) return;
   const isSi = userProfile?.language === "sinhala";
+
+  // Check if cache exists for today for this exact activity + goal
+  const now = new Date();
+  const todayDateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const cacheKey = `aura_daily_nutrition_${currentUserId}`;
+
+  try {
+    const cachedStr = localStorage.getItem(cacheKey);
+    if (cachedStr) {
+      const cached = JSON.parse(cachedStr);
+      if (cached && cached.date === todayDateKey && cached.activityName === activity && cached.goal === goal && cached.resultText) {
+        const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
+        box.classList.remove("loading");
+        box.innerHTML = `
+          <div class="msg-body">${formatMarkdown(cached.resultText)}</div>
+          <div class="chat-bubble-actions" style="margin-top: 1rem;">
+            <button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button>
+          </div>
+        `;
+        return; // Render cached advice instantly without calling API!
+      }
+    }
+  } catch (e) {}
+
   box.innerHTML = isSi ? "⏳ පෝෂණ උපදෙස් සකසමින්..." : "⏳ Generating AI Nutrition advice…";
   box.classList.add("loading");
   if (aiNutritionAdviceTimeout) clearTimeout(aiNutritionAdviceTimeout);
 
   aiNutritionAdviceTimeout = setTimeout(async () => {
     try {
-      const prompt = `You are a professional sports dietitian.
-User profile:
-- Age: ${age} | Gender: ${gender} | Height: ${height}cm | Weight: ${weight}kg
-- Activity: ${activity} | Goal: ${goal}
-- BMR: ${bmr.toFixed(0)} kcal | Daily calorie target: ${tdee.toFixed(0)} kcal | Protein: ${protein.toFixed(0)}g
+      const bmi = (weight / ((height / 100) ** 2)).toFixed(1);
+      const waistInfo = (currentWaist && currentWaist !== "--") ? `| Waist: ${currentWaist} inches` : "";
+      const chestInfo = (currentChest && currentChest !== "--") ? `| Chest: ${currentChest} inches` : "";
 
-Provide a personalized daily meal structure (Breakfast, Lunch, Dinner, Snack) with brief macro tips.
+      const prompt = `You are a world-class sports nutritionist and physical health analyst.
+Analyze ALL of the user's physical parameters thoroughly before formulating personalized advice:
+- Age: ${age} years | Gender: ${gender}
+- Height: ${height} cm | Weight: ${weight} kg | Body Mass Index (BMI): ${bmi} ${waistInfo} ${chestInfo}
+- Activity Level: ${activity} | Fitness & Health Goal: ${goal}
+- Basal Metabolic Rate (BMR): ${bmr.toFixed(0)} kcal
+- Target Daily Caloric Intake: ${tdee.toFixed(0)} kcal
+- Target Daily Protein Intake: ${protein.toFixed(0)} g (${(protein / weight).toFixed(1)} g/kg)
+
+Required Output Structure:
+1. 📊 **Physical Metric Analysis**: Analyze their BMI (${bmi}), weight/height ratio, age, and caloric balance (${bmr.toFixed(0)} BMR vs ${tdee.toFixed(0)} TDEE target).
+2. 🎯 **Custom Strategy**: Specific macro guidance & health tips tailored for their profile and goal (${goal}).
+3. 🥗 **Daily Meal Plan**: Detailed breakdown (Breakfast, Lunch, Evening Snack, Dinner) engineered to hit ${tdee.toFixed(0)} kcal & ${protein.toFixed(0)}g protein.
+
 Respond EXCLUSIVELY in ${isSi ? "Sinhala (සිංහල)" : "English"}.
-Use clean Markdown. Be concise (~150 words).`;
+Use clean Markdown formatting with clear headers and emojis.`;
 
       const resultText = await aiGenerate(prompt);
-      box.classList.remove("loading");
-      box.innerHTML = formatMarkdown(resultText);
+
+      // Save advice to local storage for today until 12:00 AM midnight
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          date: todayDateKey,
+          activityName: activity,
+          activityFactor: activityFactor || (window.getSelectedActivityFactor ? window.getSelectedActivityFactor() : 1.2),
+          goal: goal,
+          resultText: resultText,
+          isSi: isSi
+        }));
+      } catch (e) {}
+
+      // Animate live typing effect as if AI is typing the message in real time
+      typeWriterEffect(box, resultText, isSi, () => {
+        const copyLabel = isSi ? "කොපි කරන්න" : "Copy";
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "chat-bubble-actions";
+        actionsDiv.style.marginTop = "1rem";
+        actionsDiv.innerHTML = `<button type="button" class="chat-copy-btn" onclick="copyChatMessage(this)">📋 ${copyLabel}</button>`;
+        box.appendChild(actionsDiv);
+      });
     } catch (err) {
       console.error("Nutrition AI error:", err);
       box.classList.remove("loading");
